@@ -11,25 +11,28 @@ function formatMB(bytes) {
 
 function getProcessTree() {
   try {
-    const output = execSync('ps aux --sort=-%mem 2>/dev/null || ps aux 2>/dev/null', {
-      encoding: 'utf8',
-      timeout: 5000,
-    });
+    // Try different ps formats for compatibility
+    let output;
+    try {
+      output = execSync('ps -eo pid,rss,comm --sort=-rss 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+    } catch {
+      try {
+        output = execSync('ps -eo pid,rss,comm 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+      } catch {
+        output = execSync('ps aux 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+      }
+    }
     const lines = output.trim().split('\n');
     const procs = lines.slice(1).map(line => {
       const parts = line.trim().split(/\s+/);
-      return {
-        pid: parts[1],
-        cpu: parts[2],
-        mem: parts[3],
-        rss: parts[5],
-        command: parts.slice(10).join(' ').slice(0, 80),
-      };
-    });
-    // Top 10 by memory
-    return procs.slice(0, 10);
-  } catch {
-    return [];
+      if (parts.length === 3) {
+        return { pid: parts[0], rssMB: (parseInt(parts[1]) / 1024).toFixed(1) + 'MB', command: parts[2] };
+      }
+      return { pid: parts[0], raw: parts.slice(1).join(' ').slice(0, 100) };
+    }).filter(p => p.command !== 'ps');
+    return procs.slice(0, 15);
+  } catch (e) {
+    return [{ error: e.message }];
   }
 }
 
