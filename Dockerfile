@@ -44,8 +44,11 @@ COPY --chown=node:node --from=build /app /app
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && chmod +x /usr/local/bin/docker-entrypoint.sh \
-  && mkdir -p /paperclip/instances/default/workspaces /agents \
+  && mkdir -p /paperclip/instances/default/workspaces /agents/ceo \
   && cp /app/AGENTS.md /agents/AGENTS.md \
+  && cp /app/AGENTS.md /agents/ceo/AGENTS.md \
+  && cd /agents && git init -q && git add -A && git -c user.name=paperclip -c user.email=noreply@paperclip commit -q -m "init" \
+  && cd /agents/ceo && git init -q && git add -A && git -c user.name=paperclip -c user.email=noreply@paperclip commit -q -m "init" \
   && chown -R node:node /paperclip /agents
 
 ENV NODE_ENV=production \
