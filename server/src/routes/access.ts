@@ -14,6 +14,7 @@ import type { Db } from "@paperclipai/db";
 import {
   agentApiKeys,
   authUsers,
+  instanceUserRoles,
   invites,
   joinRequests
 } from "@paperclipai/db";
@@ -2586,6 +2587,21 @@ export function accessRoutes(
       res.json(removed);
     }
   );
+
+  router.get("/admin/users", async (req, res) => {
+    await assertInstanceAdmin(req);
+    const users = await db
+      .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+      .from(authUsers)
+      .orderBy(desc(authUsers.createdAt));
+    res.json(users);
+  });
+
+  router.get("/admin/instance-roles", async (req, res) => {
+    await assertInstanceAdmin(req);
+    const roles = await db.select().from(instanceUserRoles);
+    res.json(roles);
+  });
 
   router.get("/admin/users/:userId/company-access", async (req, res) => {
     await assertInstanceAdmin(req);
