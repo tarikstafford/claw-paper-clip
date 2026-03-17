@@ -42,7 +42,8 @@ FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip /agents \
+  && mkdir -p /paperclip/instances/default/workspaces /agents \
+  && cp /app/AGENTS.md /agents/AGENTS.md \
   && chown -R node:node /paperclip /agents
 
 ENV NODE_ENV=production \
