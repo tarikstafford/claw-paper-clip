@@ -41,7 +41,9 @@ RUN pnpm --filter @paperclipai/ui build
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && chmod +x /usr/local/bin/docker-entrypoint.sh \
   && mkdir -p /paperclip/instances/default/workspaces /agents \
   && cp /app/AGENTS.md /agents/AGENTS.md \
   && chown -R node:node /paperclip /agents
@@ -60,4 +62,5 @@ ENV NODE_ENV=production \
 EXPOSE 3100
 
 USER node
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/src/index.ts"]
