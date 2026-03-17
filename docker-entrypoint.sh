@@ -14,7 +14,6 @@ fi
     for dir in /agents/*/; do
       if [ -d "$dir" ] && [ ! -f "${dir}AGENTS.md" ]; then
         cp /agents/AGENTS.md "${dir}AGENTS.md" 2>/dev/null || true
-        # Init as git repo so Claude Code has context
         if [ ! -d "${dir}.git" ]; then
           cd "$dir"
           git init -q
@@ -26,5 +25,8 @@ fi
     sleep 2
   done
 ) &
+
+# Start health monitor in background
+node /app/monitor.mjs &
 
 exec "$@"
