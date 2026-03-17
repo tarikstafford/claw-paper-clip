@@ -41,8 +41,9 @@ RUN pnpm --filter @paperclipai/ui build
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN mkdir -p /paperclip \
-  && chown node:node /paperclip
+RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && mkdir -p /paperclip /agents \
+  && chown -R node:node /paperclip /agents
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
