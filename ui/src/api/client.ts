@@ -25,9 +25,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      const currentPath = window.location.pathname + window.location.search;
-      const next = encodeURIComponent(currentPath);
+    if ((res.status === 401 || res.status === 403) && !window.location.pathname.startsWith("/auth") && !window.location.pathname.startsWith("/invite")) {
+      const next = encodeURIComponent(window.location.pathname);
       window.location.href = `/auth?next=${next}`;
       throw new Error("Session expired — redirecting to login");
     }
