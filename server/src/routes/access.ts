@@ -13,6 +13,7 @@ import { and, eq, isNull, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agentApiKeys,
+  authAccounts,
   authUsers,
   instanceUserRoles,
   invites,
@@ -2601,6 +2602,24 @@ export function accessRoutes(
     await assertInstanceAdmin(req);
     const roles = await db.select().from(instanceUserRoles);
     res.json(roles);
+  });
+
+  router.post("/admin/users/:userId/reset-password", async (req, res) => {
+    await assertInstanceAdmin(req);
+    const userId = req.params.userId as string;
+    const { password } = req.body as { password?: string };
+    if (!password || typeof password !== "string" || password.length < 8) {
+      throw badRequest("Password must be at least 8 characters");
+    }
+    const { hashPassword } = await import("better-auth/crypto");
+    const hashed = await hashPassword(password);
+    const updated = await db
+      .update(authAccounts)
+      .set({ password: hashed, updatedAt: new Date() })
+      .where(and(eq(authAccounts.userId, userId), eq(authAccounts.providerId, "credential")))
+      .returning();
+    if (updated.length === 0) throw notFound("No credential account found for this user");
+    res.json({ success: true });
   });
 
   router.get("/admin/users/:userId/company-access", async (req, res) => {

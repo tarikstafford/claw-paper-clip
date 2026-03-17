@@ -1,23 +1,12 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Shield, ShieldCheck, Users } from "lucide-react";
+import { KeyRound, Shield, ShieldCheck, Users } from "lucide-react";
 import { api } from "../api/client";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { EmptyState } from "../components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDateTime } from "../lib/utils";
-
-type Member = {
-  id: string;
-  companyId: string;
-  principalType: string;
-  principalId: string;
-  displayName: string | null;
-  email: string | null;
-  createdAt: string;
-};
 
 type UserInfo = {
   id: string;
@@ -31,10 +20,100 @@ type InstanceRole = {
   role: string;
 };
 
+function ResetPasswordDialog({
+  user,
+  onClose,
+}: {
+  user: UserInfo;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post(`/admin/users/${user.id}/reset-password`, { password }),
+    onSuccess: () => {
+      setSuccess(true);
+      setError(null);
+    },
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "Failed to reset password"),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+    setError(null);
+    mutation.mutate();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-background border border-border rounded-lg p-6 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold mb-1">Reset Password</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Set a new password for {user.name || user.email}
+        </p>
+
+        {success ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-green-500/40 bg-green-500/5 px-3 py-2 text-sm text-green-600">
+              Password reset successfully.
+            </div>
+            <Button size="sm" variant="outline" className="w-full" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <input
+              type="password"
+              placeholder="New password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-foreground"
+              autoFocus
+            />
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-foreground"
+            />
+            {error && (
+              <div className="text-xs text-destructive">{error}</div>
+            )}
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" className="flex-1" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" className="flex-1" disabled={mutation.isPending}>
+                {mutation.isPending ? "Resetting..." : "Reset Password"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function InstanceMembers() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [resetUser, setResetUser] = useState<UserInfo | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Instance Settings" }, { label: "Members" }]);
@@ -180,12 +259,28 @@ export function InstanceMembers() {
                           ? "Remove Admin"
                           : "Make Admin"}
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs shrink-0 gap-1"
+                      onClick={() => setResetUser(user)}
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      Reset Password
+                    </Button>
                   </div>
                 );
               })}
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {resetUser && (
+        <ResetPasswordDialog
+          user={resetUser}
+          onClose={() => setResetUser(null)}
+        />
       )}
     </div>
   );
