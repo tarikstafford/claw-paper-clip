@@ -25,6 +25,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      const currentPath = window.location.pathname + window.location.search;
+      const next = encodeURIComponent(currentPath);
+      window.location.href = `/auth?next=${next}`;
+      throw new Error("Session expired — redirecting to login");
+    }
     const errorBody = await res.json().catch(() => null);
     throw new ApiError(
       (errorBody as { error?: string } | null)?.error ?? `Request failed: ${res.status}`,
