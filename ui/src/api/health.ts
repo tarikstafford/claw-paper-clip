@@ -10,9 +10,11 @@ export type HealthStatus = {
   };
 };
 
+const BASE = import.meta.env.VITE_API_URL || "/api";
+
 export const healthApi = {
   get: async (): Promise<HealthStatus> => {
-    const res = await fetch("/api/health", {
+    const res = await fetch(`${BASE}/health`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
