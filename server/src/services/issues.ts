@@ -1100,15 +1100,16 @@ export function issueService(db: Db) {
           .then((rows) => rows[0] ?? null);
 
         if (!anchor) return [];
+        const anchorTs = anchor.createdAt instanceof Date ? anchor.createdAt.toISOString() : String(anchor.createdAt);
         conditions.push(
           order === "asc"
             ? sql<boolean>`(
-                ${issueComments.createdAt} > ${anchor.createdAt}
-                OR (${issueComments.createdAt} = ${anchor.createdAt} AND ${issueComments.id} > ${anchor.id})
+                ${issueComments.createdAt} > ${anchorTs}::timestamptz
+                OR (${issueComments.createdAt} = ${anchorTs}::timestamptz AND ${issueComments.id} > ${anchor.id})
               )`
             : sql<boolean>`(
-                ${issueComments.createdAt} < ${anchor.createdAt}
-                OR (${issueComments.createdAt} = ${anchor.createdAt} AND ${issueComments.id} < ${anchor.id})
+                ${issueComments.createdAt} < ${anchorTs}::timestamptz
+                OR (${issueComments.createdAt} = ${anchorTs}::timestamptz AND ${issueComments.id} < ${anchor.id})
               )`,
         );
       }
