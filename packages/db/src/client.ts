@@ -21,9 +21,16 @@ function parseConnectionUrl(url: string) {
   };
 }
 
+const CONNECTION_DEFAULTS = {
+  idle_timeout: 20,
+  max_lifetime: 60 * 5,
+  connect_timeout: 10,
+  onnotice: () => {},
+};
+
 function createUtilitySql(url: string) {
   const opts = parseConnectionUrl(url);
-  return postgres({ ...opts, max: 1, onnotice: () => {} });
+  return postgres({ ...opts, max: 1, ...CONNECTION_DEFAULTS });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -58,7 +65,8 @@ export type MigrationState =
     };
 
 export function createDb(url: string) {
-  const sql = postgres(url);
+  const opts = parseConnectionUrl(url);
+  const sql = postgres({ ...opts, max: 5, ...CONNECTION_DEFAULTS });
   return drizzlePg(sql, { schema });
 }
 
