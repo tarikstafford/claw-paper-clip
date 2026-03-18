@@ -1,7 +1,42 @@
 import Fastify from 'fastify';
-import { sendMessage, type TelegramUpdate } from './lib/telegram.js';
+import { sendMessage, TOKEN, type TelegramUpdate } from './lib/telegram.js';
 import { handleBoardMessage } from './conversation-manager.js';
 import { getConversation, upsertConversation } from './lib/conversation-store.js';
+
+// Resolve bot username on startup
+let BOT_USERNAME = '';
+fetch(`https://api.telegram.org/bot${TOKEN}/getMe`)
+  .then(r => r.json() as Promise<{ ok: boolean; result: { username: string } }>)
+  .then(data => {
+    if (data.ok) {
+      BOT_USERNAME = data.result.username.toLowerCase();
+      console.log(`[app] Bot username resolved: @${BOT_USERNAME}`);
+    }
+  })
+  .catch(() => {});
+
+function isBotMentioned(update: TelegramUpdate): boolean {
+  const message = update.message;
+  if (!message) return false;
+
+  // DMs always count
+  if (message.chat.type === 'private') return true;
+
+  // Check @mention entities
+  if (message.entities && BOT_USERNAME) {
+    for (const entity of message.entities) {
+      if (entity.type === 'mention' && message.text) {
+        const mention = message.text.substring(entity.offset, entity.offset + entity.length).toLowerCase();
+        if (mention === `@${BOT_USERNAME}`) return true;
+      }
+    }
+  }
+
+  // Check if replying to the bot's message
+  if (message.reply_to_message?.from?.is_bot) return true;
+
+  return false;
+}
 
 const HELP_TEXT = [
   '*Akasa Board Bot*',
@@ -57,6 +92,16 @@ export function buildApp() {
       return reply.code(200).send({ ok: true });
     }
 
+    // In groups, only respond to messages that @mention the bot or reply to it
+    if (message.chat.type !== 'private' && !isBotMentioned(update)) {
+      return reply.code(200).send({ ok: true });
+    }
+
+    // Strip the @bot mention from the text so the CEO gets a clean message
+    const cleanText = BOT_USERNAME
+      ? text.replace(new RegExp(`@${BOT_USERNAME}`, 'gi'), '').trim()
+      : text;
+
     // Strip bot username suffix (e.g. /help@MyBot → /help)
     const command = text.split('@')[0]?.split(' ')[0]?.toLowerCase() ?? '';
 
@@ -80,7 +125,7 @@ export function buildApp() {
     }
 
     // Any other message — forward to CEO via Paperclip
-    handleBoardMessage(chatId, username, text).catch((err: Error) => {
+    handleBoardMessage(chatId, username, cleanText || text).catch((err: Error) => {
       console.error('[app] handleBoardMessage error:', err.message);
     });
 
