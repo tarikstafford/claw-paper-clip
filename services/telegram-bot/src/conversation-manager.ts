@@ -14,6 +14,9 @@ import {
 
 const POLL_INTERVAL_MS = Number(process.env['POLL_INTERVAL_MS'] ?? 30_000);
 
+// Track forwarded comment IDs to prevent duplicate sends
+const forwardedCommentIds = new Set<string>();
+
 /**
  * Converts GitHub-flavored Markdown to Telegram MarkdownV2-safe plain text.
  * Telegram doesn't support ## headings, ---, or nested formatting well,
@@ -97,6 +100,8 @@ export async function pollCeoReplies(): Promise<void> {
       );
 
       for (const comment of ceoComments) {
+        if (forwardedCommentIds.has(comment.id)) continue;
+        forwardedCommentIds.add(comment.id);
         await sendMessage(conversation.chatId, formatForTelegram(comment.body));
         console.log(`[conversation-manager] Forwarded CEO comment ${comment.id} to chat ${conversation.chatId}`);
       }
