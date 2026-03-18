@@ -7,14 +7,28 @@ if (!TOKEN) {
 }
 
 export async function sendMessage(chatId: number | string, text: string): Promise<void> {
-  const res = await fetch(`${TELEGRAM_API}/bot${TOKEN}/sendMessage`, {
+  // Try Markdown first, fall back to plain text if parsing fails
+  let res = await fetch(`${TELEGRAM_API}/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
   });
   if (!res.ok) {
     const body = await res.text();
-    console.error('[telegram] sendMessage failed:', res.status, body);
+    if (body.includes("can't parse entities")) {
+      // Retry without parse_mode
+      res = await fetch(`${TELEGRAM_API}/bot${TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+      if (!res.ok) {
+        const retryBody = await res.text();
+        console.error('[telegram] sendMessage failed (plain):', res.status, retryBody);
+      }
+    } else {
+      console.error('[telegram] sendMessage failed:', res.status, body);
+    }
   }
 }
 
