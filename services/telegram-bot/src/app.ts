@@ -1,0 +1,91 @@
+import Fastify from 'fastify';
+import { sendMessage, type TelegramUpdate } from './lib/telegram.js';
+import { handleBoardMessage } from './conversation-manager.js';
+import { getConversation, upsertConversation } from './lib/conversation-store.js';
+
+const HELP_TEXT = [
+  '*Akasa Board Bot*',
+  '',
+  'This bot connects you directly to the Akasa CEO.',
+  '',
+  'Just send any message and it will be forwarded to the CEO.',
+  'You\'ll receive their reply here when they respond.',
+  '',
+  '/help — Show this message',
+  '/new  — Start a fresh conversation thread',
+].join('\n');
+
+// Comma-separated list of allowed Telegram user IDs (optional — if empty, all users allowed)
+const ALLOWED_USER_IDS = new Set(
+  (process.env['ALLOWED_TELEGRAM_USER_IDS'] ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(Number)
+);
+
+function isAuthorized(userId: number | undefined): boolean {
+  if (ALLOWED_USER_IDS.size === 0) return true; // no allowlist = open
+  return userId !== undefined && ALLOWED_USER_IDS.has(userId);
+}
+
+export function buildApp() {
+  const app = Fastify({
+    logger: { level: process.env['LOG_LEVEL'] ?? 'info' },
+  });
+
+  // Health check
+  app.get('/health', async () => ({ ok: true }));
+
+  // Telegram webhook receiver
+  app.post('/webhook', async (request, reply) => {
+    const update = request.body as TelegramUpdate;
+    const message = update.message;
+
+    if (!message?.text) {
+      return reply.code(200).send({ ok: true });
+    }
+
+    const chatId = message.chat.id;
+    const text = message.text.trim();
+    const userId = message.from?.id;
+    const username = message.from?.username ?? message.from?.first_name ?? String(userId ?? chatId);
+
+    if (!isAuthorized(userId)) {
+      console.warn(`[app] Unauthorized user ${userId} (@${username}) in chat ${chatId}`);
+      sendMessage(chatId, '⛔ You are not authorized to use this bot.').catch(() => {});
+      return reply.code(200).send({ ok: true });
+    }
+
+    // Strip bot username suffix (e.g. /help@MyBot → /help)
+    const command = text.split('@')[0]?.split(' ')[0]?.toLowerCase() ?? '';
+
+    if (command === '/help' || command === '/start') {
+      sendMessage(chatId, HELP_TEXT).catch((err: Error) =>
+        console.error('[app] sendMessage error:', err.message),
+      );
+      return reply.code(200).send({ ok: true });
+    }
+
+    if (command === '/new') {
+      // Reset this chat's conversation so the next message creates a fresh issue
+      const existing = getConversation(chatId);
+      if (existing) {
+        upsertConversation({ ...existing, issueId: '', lastSeenCommentId: null, updatedAt: new Date().toISOString() });
+      }
+      sendMessage(chatId, '🔄 Starting a new conversation thread. Send your message!').catch(
+        (err: Error) => console.error('[app] sendMessage error:', err.message),
+      );
+      return reply.code(200).send({ ok: true });
+    }
+
+    // Any other message — forward to CEO via Paperclip
+    handleBoardMessage(chatId, username, text).catch((err: Error) => {
+      console.error('[app] handleBoardMessage error:', err.message);
+    });
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  return app;
+}
