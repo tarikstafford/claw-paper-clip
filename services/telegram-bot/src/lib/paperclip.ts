@@ -58,7 +58,7 @@ export async function postChatMessage(
 ): Promise<'created' | 'duplicate'> {
   const res = await chatFetch(`/api/chat/threads/${threadId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ body, telegramUpdateId }),
+    body: JSON.stringify({ body, telegramUpdateId, senderType: 'user' }),
   });
   if (res.status === 409) {
     return 'duplicate';

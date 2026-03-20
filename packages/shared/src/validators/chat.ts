@@ -9,5 +9,6 @@ export type CreateThread = z.infer<typeof createThreadSchema>;
 export const sendMessageSchema = z.object({
   body: z.string().min(1).max(50000),
   telegramUpdateId: z.number().int().optional(),
+  senderType: z.enum(["user", "agent"]).optional(),
 });
 export type SendMessage = z.infer<typeof sendMessageSchema>;

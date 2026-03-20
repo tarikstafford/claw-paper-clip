@@ -79,8 +79,8 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
     assertCompanyAccess(req, thread.companyId);
 
     const actor = getActorInfo(req);
-    const senderType = actor.actorType === "agent" ? "agent" : "user";
-    const { body, telegramUpdateId } = req.body as SendMessage;
+    const { body, telegramUpdateId, senderType: requestedSenderType } = req.body as SendMessage;
+    const senderType = requestedSenderType ?? (actor.actorType === "agent" ? "agent" : "user");
 
     let message;
     try {
