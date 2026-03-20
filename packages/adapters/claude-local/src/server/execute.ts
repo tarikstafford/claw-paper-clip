@@ -389,15 +389,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const chatThreadContext = asString(context.paperclipChatThreadContext, "").trim();
   const prompt = joinPromptSections([
     renderedBootstrapPrompt,
     sessionHandoffNote,
+    chatThreadContext,    // COMP-05: injects compacted chat thread into agent prompt
     renderedPrompt,
   ]);
   const promptMetrics = {
     promptChars: prompt.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
+    chatThreadContextChars: chatThreadContext.length,
     heartbeatPromptChars: renderedPrompt.length,
   };
 

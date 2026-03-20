@@ -6,12 +6,32 @@ if (!TOKEN) {
   throw new Error('[telegram] TELEGRAM_BOT_TOKEN is not set');
 }
 
+/**
+ * Converts agent Markdown output to Telegram HTML format.
+ */
+export function formatForTelegramHtml(text: string): string {
+  return text
+    // Convert headings (any level) to bold
+    .replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>')
+    // Convert **bold** to <b>bold</b>
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    // Convert *italic* to <i>italic</i> (after bold to avoid double-processing)
+    .replace(/\*(.+?)\*/g, '<i>$1</i>')
+    // Convert `code` to <code>code</code>
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    // Remove horizontal rules
+    .replace(/^---+$/gm, '')
+    // Collapse 3+ newlines to 2
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function sendMessage(chatId: number | string, text: string): Promise<void> {
-  // Try Markdown first, fall back to plain text if parsing fails
+  // Try HTML first, fall back to plain text if parsing fails
   let res = await fetch(`${TELEGRAM_API}/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   });
   if (!res.ok) {
     const body = await res.text();

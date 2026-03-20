@@ -24,6 +24,8 @@ import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
+import { chatRoutes } from "./routes/chat.js";
+import { compactionService } from "./services/compaction.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
@@ -43,6 +45,7 @@ import { createPluginHostServiceCleanup } from "./services/plugin-host-service-c
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import Anthropic from "@anthropic-ai/sdk";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -138,6 +141,17 @@ export async function createApp(
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
+  // Instantiate Anthropic client — if ANTHROPIC_API_KEY is missing, stub it so
+  // the server still starts (token counting will return null gracefully).
+  let anthropicClient: Anthropic;
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+    anthropicClient = new Anthropic();
+  } catch {
+    anthropicClient = new Anthropic({ apiKey: "stub-key-server-will-not-call-api" });
+  }
+  const compactionSvc = compactionService(db, anthropicClient);
+  api.use(chatRoutes(db, compactionSvc));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);

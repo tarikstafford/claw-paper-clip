@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, Link, Navigate, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
+import { chatApi } from "../api/chat";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { ApiError } from "../api/client";
@@ -71,6 +72,8 @@ import {
 } from "@paperclipai/shared";
 import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
+import { ChatThreadList } from "../components/ChatThreadList";
+import { NewThreadDialog } from "../components/NewThreadDialog";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -185,12 +188,13 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "configuration" | "runs" | "budget" | "chat";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configuration";
   if (value === "budget") return "budget";
   if (value === "runs") return value;
+  if (value === "chat") return "chat";
   return "dashboard";
 }
 
@@ -644,6 +648,7 @@ export function AgentDetail() {
               { value: "configuration", label: "Configuration" },
               { value: "runs", label: "Runs" },
               { value: "budget", label: "Budget" },
+              { value: "chat", label: "Chat" },
             ]}
             value={activeView}
             onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
@@ -760,6 +765,53 @@ export function AgentDetail() {
           />
         </div>
       ) : null}
+
+      {activeView === "chat" && resolvedCompanyId && agent ? (
+        <AgentChatTab
+          companyId={resolvedCompanyId}
+          agentId={agent.id}
+          agentName={agent.name}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AgentChatTab({ companyId, agentId, agentName }: { companyId: string; agentId: string; agentName: string }) {
+  const navigate = useNavigate();
+  const [newThreadOpen, setNewThreadOpen] = useState(false);
+
+  const { data: threads = [] } = useQuery({
+    queryKey: queryKeys.chat.threadsByAgent(companyId, agentId),
+    queryFn: () => chatApi.listThreads(companyId, { agentId }),
+    enabled: !!companyId,
+  });
+
+  const agentMap = useMemo(() => new Map([[agentId, agentName]]), [agentId, agentName]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">Conversations with this agent</h3>
+        <Button size="sm" variant="outline" onClick={() => setNewThreadOpen(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          New Chat
+        </Button>
+      </div>
+      <div className="border border-border rounded-md overflow-hidden">
+        <ChatThreadList
+          threads={threads}
+          selectedThreadId={null}
+          onSelectThread={(id) => navigate(`/chat/${id}`)}
+          agentMap={agentMap}
+        />
+      </div>
+      <NewThreadDialog
+        open={newThreadOpen}
+        onOpenChange={setNewThreadOpen}
+        companyId={companyId}
+        preselectedAgentId={agentId}
+      />
     </div>
   );
 }

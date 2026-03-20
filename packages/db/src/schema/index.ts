@@ -47,3 +47,6 @@ export { pluginEntities } from "./plugin_entities.js";
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+export { chatThreads } from "./chat_threads.js";
+export { chatMessages } from "./chat_messages.js";
+export { chatCompactionEvents } from "./chat_compaction_events.js";

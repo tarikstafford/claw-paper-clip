@@ -507,6 +507,24 @@ function handleLiveEvent(
       buildActivityToast(queryClient, expectedCompanyId, payload, currentActor) ??
       buildJoinRequestToast(payload);
     if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
+    return;
+  }
+
+  if (event.type === "chat.message.created") {
+    const threadId = readString(payload.threadId);
+    const agentId = readString(payload.agentId);
+    if (threadId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.chat.messages(threadId) });
+      if (expectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.chat.threads(expectedCompanyId) });
+        if (agentId) {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.chat.threadsByAgent(expectedCompanyId, agentId),
+          });
+        }
+      }
+    }
+    return;
   }
 }
 

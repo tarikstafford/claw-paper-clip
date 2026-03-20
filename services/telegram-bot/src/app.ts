@@ -113,10 +113,10 @@ export function buildApp() {
     }
 
     if (command === '/new') {
-      // Reset this chat's conversation so the next message creates a fresh issue
+      // Reset this chat's conversation so the next message creates a fresh thread
       const existing = getConversation(chatId);
       if (existing) {
-        upsertConversation({ ...existing, issueId: '', lastSeenCommentId: null, updatedAt: new Date().toISOString() });
+        upsertConversation({ ...existing, threadId: '', lastSeenMessageId: null, updatedAt: new Date().toISOString() });
       }
       sendMessage(chatId, '🔄 Starting a new conversation thread. Send your message!').catch(
         (err: Error) => console.error('[app] sendMessage error:', err.message),
@@ -124,8 +124,8 @@ export function buildApp() {
       return reply.code(200).send({ ok: true });
     }
 
-    // Any other message — forward to CEO via Paperclip
-    handleBoardMessage(chatId, username, cleanText || text).catch((err: Error) => {
+    // Any other message — forward to CEO via chat API (fire-and-forget)
+    handleBoardMessage(chatId, username, cleanText || text, update.update_id).catch((err: Error) => {
       console.error('[app] handleBoardMessage error:', err.message);
     });
 

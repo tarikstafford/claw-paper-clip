@@ -379,6 +379,10 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
+  createThreadSchema,
+  sendMessageSchema,
+  type CreateThread,
+  type SendMessage,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

@@ -14,6 +14,11 @@ export const queryKeys = {
     adapterModels: (companyId: string, adapterType: string) =>
       ["agents", companyId, "adapter-models", adapterType] as const,
   },
+  chat: {
+    threads: (companyId: string) => ["chat", "threads", companyId] as const,
+    threadsByAgent: (companyId: string, agentId: string) => ["chat", "threads", companyId, "agent", agentId] as const,
+    messages: (threadId: string) => ["chat", "messages", threadId] as const,
+  },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,
     search: (companyId: string, q: string, projectId?: string) =>
