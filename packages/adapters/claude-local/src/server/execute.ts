@@ -390,7 +390,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const chatThreadContext = asString(context.paperclipChatThreadContext, "").trim();
-  const chatModePreamble = wakeReason === "chat_message" && chatThreadContext
+  const chatModePreamble = context.wakeReason === "chat_message" && chatThreadContext
     ? "This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Only use the Paperclip API if the user explicitly asks about tasks, status, assignments, or work. Do NOT run the full heartbeat procedure (no identity check, no inbox scan, no dashboard review) unless the user asks for it."
     : "";
   const prompt = joinPromptSections([
