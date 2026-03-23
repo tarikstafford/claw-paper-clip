@@ -1538,6 +1538,11 @@ export function heartbeatService(db: Db) {
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
     const config = parseObject(agent.adapterConfig);
+    // Application-wide defaults: PAPERCLIP_DEFAULT_ADAPTER_TYPE and PAPERCLIP_DEFAULT_MODEL
+    const effectiveAdapterType = agent.adapterType || process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "claude_local";
+    if (process.env.PAPERCLIP_DEFAULT_MODEL && !config.model) {
+      config.model = process.env.PAPERCLIP_DEFAULT_MODEL;
+    }
     const executionWorkspaceMode = resolveExecutionWorkspaceMode({
       projectPolicy: projectExecutionWorkspacePolicy,
       issueSettings: issueExecutionWorkspaceSettings,
@@ -1842,9 +1847,9 @@ export function heartbeatService(db: Db) {
         });
       };
 
-      const adapter = getServerAdapter(agent.adapterType);
+      const adapter = getServerAdapter(effectiveAdapterType);
       const authToken = adapter.supportsLocalAgentJwt
-        ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
+        ? createLocalAgentJwt(agent.id, agent.companyId, effectiveAdapterType, run.id)
         : null;
       if (adapter.supportsLocalAgentJwt && !authToken) {
         logger.warn(
