@@ -120,31 +120,35 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // If this was a chat message, post the response back to the chat thread
     if (wakeReason === "chat_message" && context.threadId) {
       const paperclipApiUrl = process.env.PAPERCLIP_API_URL || "http://localhost:3100";
-      const env = buildPaperclipEnv(agent);
-      const agentApiKey = ctx.authToken || env.PAPERCLIP_API_KEY || "";
+      const agentApiKey = ctx.authToken || "";
+
+      await onLog("stderr", `[openai-compatible] Chat post-back: threadId=${context.threadId}, hasAuthToken=${!!ctx.authToken}, apiUrl=${paperclipApiUrl}\n`);
 
       if (agentApiKey) {
         try {
-          const postRes = await fetch(
-            `${paperclipApiUrl}/api/chat/threads/${context.threadId}/messages`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${agentApiKey}`,
-              },
-              body: JSON.stringify({ body: responseText }),
+          const postUrl = `${paperclipApiUrl}/api/chat/threads/${context.threadId}/messages`;
+          const postRes = await fetch(postUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${agentApiKey}`,
             },
-          );
+            body: JSON.stringify({ body: responseText }),
+          });
           if (postRes.ok) {
             await onLog("stderr", `[openai-compatible] Posted response to chat thread ${context.threadId}\n`);
           } else {
-            await onLog("stderr", `[openai-compatible] Failed to post to chat thread: ${postRes.status}\n`);
+            const errBody = await postRes.text();
+            await onLog("stderr", `[openai-compatible] Failed to post to chat thread: ${postRes.status} ${errBody}\n`);
           }
         } catch (err) {
           await onLog("stderr", `[openai-compatible] Error posting to chat thread: ${(err as Error).message}\n`);
         }
+      } else {
+        await onLog("stderr", `[openai-compatible] No auth token available — cannot post response back to chat thread\n`);
       }
+    } else {
+      await onLog("stderr", `[openai-compatible] Not a chat wake (wakeReason=${wakeReason}, threadId=${context.threadId ?? "none"}) — skipping post-back\n`);
     }
 
     return {
