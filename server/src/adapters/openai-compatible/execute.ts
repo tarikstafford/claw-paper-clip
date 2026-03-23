@@ -25,7 +25,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   // Config fields
   const baseUrl = asString(config.baseUrl, "https://api.minimax.io/v1");
-  const apiKey = asString(config.apiKey, "") || process.env.OPENAI_COMPATIBLE_API_KEY || "";
+  const apiKey = asString(config.apiKey, "") || process.env.MINIMAX_API_KEY || process.env.OPENAI_COMPATIBLE_API_KEY || "";
   const model = asString(config.model, "MiniMax-M2.7");
   const maxTokens = asNumber(config.maxTokens, 4096);
   const temperature = asNumber(config.temperature, 0.7);
