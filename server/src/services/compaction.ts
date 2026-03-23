@@ -11,6 +11,8 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "claude-opus-4-5": 200_000,
   "claude-sonnet-4-5": 200_000,
   "claude-haiku-3-5": 200_000,
+  "MiniMax-M2.7": 204_800,
+  "MiniMax-M2.7-highspeed": 204_800,
 };
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const COMPACTION_THRESHOLD_RATIO = 0.55;
