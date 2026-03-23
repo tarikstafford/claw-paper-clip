@@ -6,6 +6,7 @@ export const openaiCompatibleAdapter: ServerAdapterModule = {
   type: "openai_compatible",
   execute,
   testEnvironment,
+  supportsLocalAgentJwt: true,
   models: [
     { id: "MiniMax-M2.7", label: "MiniMax M2.7 (204K context)" },
     { id: "MiniMax-M2.7-highspeed", label: "MiniMax M2.7 Highspeed" },
