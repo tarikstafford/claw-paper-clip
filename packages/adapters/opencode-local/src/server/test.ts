@@ -231,6 +231,7 @@ export async function testEnvironment(
     args.push("--model", probeModel);
     if (variant) args.push("--variant", variant);
     if (extraArgs.length > 0) args.push(...extraArgs);
+    args.push("Respond with hello.");
 
     try {
       const probe = await runChildProcess(
@@ -242,7 +243,6 @@ export async function testEnvironment(
           env: runtimeEnv,
           timeoutSec: 60,
           graceSec: 5,
-          stdin: "Respond with hello.",
           onLog: async () => {},
         },
       );

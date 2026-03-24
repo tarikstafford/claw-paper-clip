@@ -277,6 +277,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (model) args.push("--model", model);
     if (variant) args.push("--variant", variant);
     if (extraArgs.length > 0) args.push(...extraArgs);
+    // OpenCode takes the prompt as a positional argument, not via stdin.
+    args.push(prompt);
     return args;
   };
 
@@ -288,7 +290,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command,
         cwd,
         commandNotes,
-        commandArgs: [...args, `<stdin prompt ${prompt.length} chars>`],
+        commandArgs: [...args.slice(0, -1), `<prompt ${prompt.length} chars>`],
         env: redactEnvForLogs(env),
         prompt,
         promptMetrics,
@@ -299,7 +301,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env: runtimeEnv,
-      stdin: prompt,
       timeoutSec,
       graceSec,
       onLog,
