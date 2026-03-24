@@ -1,5 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
+import { pluginConfig, plugins } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { secretService } from "../services/index.js";
 
@@ -139,17 +141,52 @@ export function githubOAuthRoutes(db: Db) {
       (s) => s.name === GITHUB_SECRET_NAME,
     );
 
+    let secretId: string;
     if (existingGithubSecret) {
       await secrets.rotate(existingGithubSecret.id, {
         value: tokenData.access_token,
       }, { userId: req.actor?.userId ?? "board", agentId: null });
+      secretId = existingGithubSecret.id;
     } else {
-      await secrets.create(companyId, {
+      const created = await secrets.create(companyId, {
         name: GITHUB_SECRET_NAME,
         provider: "local_encrypted",
         value: tokenData.access_token,
         description: `GitHub token for @${userData.login ?? "unknown"} (connected via OAuth)`,
       }, { userId: req.actor?.userId ?? "board", agentId: null });
+      secretId = created.id;
+    }
+
+    // Update the GitHub connector plugin config with the secret UUID
+    // so the worker can resolve it via ctx.secrets.resolve()
+    const PLUGIN_KEY = "paperclip-github-connector";
+    const pluginRow = await db
+      .select({ id: plugins.id })
+      .from(plugins)
+      .where(eq(plugins.pluginKey, PLUGIN_KEY))
+      .then((rows) => rows[0] ?? null);
+
+    if (pluginRow) {
+      const existingConfig = await db
+        .select()
+        .from(pluginConfig)
+        .where(eq(pluginConfig.pluginId, pluginRow.id))
+        .then((rows) => rows[0] ?? null);
+
+      const currentConfig = (existingConfig?.configJson as Record<string, unknown>) ?? {};
+      const updatedConfig = { ...currentConfig, githubTokenSecretRef: secretId };
+
+      if (existingConfig) {
+        await db
+          .update(pluginConfig)
+          .set({ configJson: updatedConfig, updatedAt: new Date() })
+          .where(eq(pluginConfig.pluginId, pluginRow.id));
+      } else {
+        await db.insert(pluginConfig).values({
+          pluginId: pluginRow.id,
+          configJson: updatedConfig,
+        });
+      }
     }
 
     // Redirect back to the plugins page
