@@ -255,11 +255,27 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const chatThreadContext = asString(context.paperclipChatThreadContext, "").trim();
+  const chatThreadId = typeof context.threadId === "string" ? context.threadId : "";
+  const chatModePreamble = context.wakeReason === "chat_message" && chatThreadContext
+    ? `This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Only use the Paperclip API if the user explicitly asks about tasks, status, assignments, or work. Do NOT run the full heartbeat procedure (no identity check, no inbox scan, no dashboard review) unless the user asks for it.
+
+IMPORTANT: After composing your response, you MUST post it back to the chat thread so the user can see it. Use this curl command:
+
+curl -s -X POST "$PAPERCLIP_API_URL/api/chat/threads/${chatThreadId}/messages" \\
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"body": "<YOUR_RESPONSE_HERE>", "senderType": "agent"}'
+
+Replace <YOUR_RESPONSE_HERE> with your actual response text (properly JSON-escaped). Do this as the final step of every chat response.`
+    : "";
   const prompt = joinPromptSections([
     skillsContent,
     instructionsPrefix,
     renderedBootstrapPrompt,
+    chatModePreamble,
     sessionHandoffNote,
+    chatThreadContext,    // COMP-05: injects compacted chat thread into agent prompt
     renderedPrompt,
   ]);
   const promptMetrics = {
@@ -267,7 +283,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     skillsChars: skillsContent.length,
     instructionsChars: instructionsPrefix.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    chatModePreambleChars: chatModePreamble.length,
     sessionHandoffChars: sessionHandoffNote.length,
+    chatThreadContextChars: chatThreadContext.length,
     heartbeatPromptChars: renderedPrompt.length,
   };
 
