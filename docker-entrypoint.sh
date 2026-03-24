@@ -1,5 +1,18 @@
 #!/bin/sh
 
+# Write OpenCode auth.json from environment variables so providers can authenticate.
+# OpenCode reads credentials from ~/.local/share/opencode/auth.json, not env vars.
+OPENCODE_AUTH_DIR="$HOME/.local/share/opencode"
+mkdir -p "$OPENCODE_AUTH_DIR"
+cat > "$OPENCODE_AUTH_DIR/auth.json" <<AUTHEOF
+{
+$([ -n "$MINIMAX_API_KEY" ] && echo "  \"minimax\": { \"type\": \"api\", \"apiKey\": \"$MINIMAX_API_KEY\" },")
+$([ -n "$ANTHROPIC_API_KEY" ] && echo "  \"anthropic\": { \"type\": \"api\", \"apiKey\": \"$ANTHROPIC_API_KEY\" },")
+$([ -n "$OPENAI_API_KEY" ] && echo "  \"openai\": { \"type\": \"api\", \"apiKey\": \"$OPENAI_API_KEY\" },")
+  "_generated": true
+}
+AUTHEOF
+
 # Initialize /agents as a git repo with AGENTS.md
 if [ ! -d /agents/.git ]; then
   cd /agents
