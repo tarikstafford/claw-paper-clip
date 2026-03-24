@@ -26,6 +26,7 @@ COPY packages/plugins/examples/plugin-hello-world-example/package.json packages/
 COPY packages/plugins/examples/plugin-kitchen-sink-example/package.json packages/plugins/examples/plugin-kitchen-sink-example/
 COPY packages/plugins/examples/plugin-authoring-smoke-example/package.json packages/plugins/examples/plugin-authoring-smoke-example/
 COPY packages/plugins/examples/plugin-file-browser-example/package.json packages/plugins/examples/plugin-file-browser-example/
+COPY packages/plugins/examples/plugin-github-connector/package.json packages/plugins/examples/plugin-github-connector/
 
 RUN pnpm install --frozen-lockfile
 
@@ -36,6 +37,7 @@ COPY . .
 RUN pnpm --filter @paperclipai/shared build
 RUN pnpm --filter @paperclipai/db build
 RUN pnpm --filter @paperclipai/plugin-sdk build
+RUN pnpm --filter @paperclipai/plugin-github-connector build
 RUN pnpm --filter @paperclipai/ui build
 
 FROM base AS production
