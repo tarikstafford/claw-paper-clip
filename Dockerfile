@@ -46,7 +46,8 @@ COPY --chown=node:node --from=build /app /app
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && chmod +x /usr/local/bin/docker-entrypoint.sh \
-  && mkdir -p /paperclip/instances/default/workspaces /agents/ceo \
+  && mkdir -p /paperclip/instances/default/workspaces /agents/ceo /paperclip/.config/opencode \
+  && cp /app/opencode.json /paperclip/.config/opencode/opencode.json \
   && cp /app/AGENTS.md /agents/AGENTS.md \
   && cp /app/AGENTS.md /agents/ceo/AGENTS.md \
   && cd /agents && git init -q && git add -A && git -c user.name=paperclip -c user.email=noreply@paperclip commit -q -m "init" \
