@@ -314,6 +314,34 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         const workspaces = projectWorkspaces.get(projectId) ?? [];
         return workspaces.find((workspace) => workspace.isPrimary) ?? null;
       },
+      async create(input) {
+        requireCapability(manifest, capabilitySet, "projects.create");
+        const id = crypto.randomUUID();
+        const project = { id, companyId: input.companyId, name: input.name, description: input.description ?? null, status: input.status ?? "in_progress" } as unknown as Project;
+        projects.set(id, project);
+        return project;
+      },
+      async createWorkspace(projectId, companyId, input) {
+        requireCapability(manifest, capabilitySet, "project.workspaces.write");
+        const ws: PluginWorkspace = { id: crypto.randomUUID(), projectId, name: input.name ?? "Workspace", path: input.cwd ?? "", isPrimary: input.isPrimary ?? true, repoUrl: input.repoUrl ?? null, repoRef: input.repoRef ?? null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const existing = projectWorkspaces.get(projectId) ?? [];
+        existing.push(ws);
+        projectWorkspaces.set(projectId, existing);
+        return ws;
+      },
+      async updateWorkspace(projectId, workspaceId, companyId, input) {
+        requireCapability(manifest, capabilitySet, "project.workspaces.write");
+        const workspaces = projectWorkspaces.get(projectId) ?? [];
+        const ws = workspaces.find((w) => w.id === workspaceId);
+        if (!ws) throw new Error("Workspace not found");
+        if (input.cwd !== undefined) ws.path = input.cwd ?? "";
+        if (input.repoUrl !== undefined) ws.repoUrl = input.repoUrl ?? null;
+        if (input.repoRef !== undefined) ws.repoRef = input.repoRef ?? null;
+        if (input.name !== undefined) ws.name = input.name ?? ws.name;
+        if (input.isPrimary !== undefined) ws.isPrimary = input.isPrimary;
+        ws.updatedAt = new Date().toISOString();
+        return ws;
+      },
     },
     companies: {
       async list(input) {

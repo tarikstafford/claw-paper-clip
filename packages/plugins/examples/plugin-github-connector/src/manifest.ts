@@ -23,7 +23,9 @@ const manifest: PaperclipPluginManifestV1 = {
   capabilities: [
     "companies.read",
     "projects.read",
+    "projects.create",
     "project.workspaces.read",
+    "project.workspaces.write",
     "issues.read",
     "issues.create",
     "issues.update",

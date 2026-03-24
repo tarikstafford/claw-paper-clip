@@ -383,7 +383,9 @@ export const PLUGIN_CAPABILITIES = [
   // Data Read
   "companies.read",
   "projects.read",
+  "projects.create",
   "project.workspaces.read",
+  "project.workspaces.write",
   "issues.read",
   "issue.comments.read",
   "issue.documents.read",

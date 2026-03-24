@@ -553,6 +553,18 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         async getWorkspaceForIssue(issueId: string, companyId: string) {
           return callHost("projects.getWorkspaceForIssue", { issueId, companyId });
         },
+
+        async create(input) {
+          return callHost("projects.create", input);
+        },
+
+        async createWorkspace(projectId: string, companyId: string, input) {
+          return callHost("projects.createWorkspace", { projectId, companyId, ...input });
+        },
+
+        async updateWorkspace(projectId: string, workspaceId: string, companyId: string, input) {
+          return callHost("projects.updateWorkspace", { projectId, workspaceId, companyId, ...input });
+        },
       },
 
       companies: {

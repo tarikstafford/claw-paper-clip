@@ -319,6 +319,27 @@ async function syncConnectedRepos(ctx: PluginContext): Promise<void> {
           if (status.status === "cloned") cloned++;
           else pulled++;
 
+          // Update workspace cwd so agents can find the cloned repo
+          if (!workspacePath && status.status === "cloned") {
+            try {
+              await ctx.projects.updateWorkspace(
+                project.id,
+                workspace.id,
+                company.id,
+                { cwd: targetDir },
+              );
+              ctx.logger.info("Updated workspace cwd after clone", {
+                workspaceId: workspace.id,
+                cwd: targetDir,
+              });
+            } catch (err) {
+              ctx.logger.warn("Failed to update workspace cwd", {
+                workspaceId: workspace.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+
           await ctx.activity.log({
             companyId: company.id,
             entityType: "project",
@@ -662,30 +683,76 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       connectedAt: new Date().toISOString(),
     };
 
-    // Auto-create project + workspace if enabled
-    const config = await getConfig(ctx);
-    if (config.autoCreateProjects) {
-      const existingProjects = await ctx.projects.list({
-        companyId,
-        limit: 200,
-        offset: 0,
-      });
-      const existingProject = existingProjects.find((p) => {
-        return p.name.toLowerCase() === repo.name.toLowerCase();
-      });
+    // Find or create project + workspace for this repo
+    const existingProjects = await ctx.projects.list({
+      companyId,
+      limit: 200,
+      offset: 0,
+    });
 
-      if (existingProject) {
-        entry.projectId = existingProject.id;
-        ctx.logger.info("Project already exists, linking repo", {
-          projectId: existingProject.id,
-          slug,
+    // Check if a project already has a workspace pointing to this repo
+    let linkedProjectId: string | undefined;
+    let linkedWorkspaceId: string | undefined;
+
+    for (const p of existingProjects) {
+      const workspaces = await ctx.projects.listWorkspaces(p.id, companyId);
+      const match = workspaces.find(
+        (w) => w.repoUrl && parseRepoFromUrl(w.repoUrl) === slug,
+      );
+      if (match) {
+        linkedProjectId = p.id;
+        linkedWorkspaceId = match.id;
+        break;
+      }
+    }
+
+    // If no existing project has this repo, check by name match
+    if (!linkedProjectId) {
+      const nameMatch = existingProjects.find(
+        (p) => p.name.toLowerCase() === repo.name.toLowerCase(),
+      );
+      if (nameMatch) {
+        linkedProjectId = nameMatch.id;
+        // Add a workspace with the repo URL
+        const ws = await ctx.projects.createWorkspace(nameMatch.id, companyId, {
+          name: repo.name,
+          repoUrl: repo.clone_url,
+          repoRef: repo.default_branch,
+          isPrimary: true,
+        });
+        linkedWorkspaceId = ws.id;
+        ctx.logger.info("Added workspace to existing project", {
+          projectId: nameMatch.id,
+          workspaceId: ws.id,
         });
       }
-      // Note: project creation requires the REST API which isn't available
-      // via the plugin SDK. The project + workspace must be created from the
-      // board UI. The connector will track connection state and sync once
-      // a workspace with this repoUrl exists.
     }
+
+    // If no project at all, create one with a workspace
+    if (!linkedProjectId) {
+      const project = await ctx.projects.create({
+        companyId,
+        name: repo.name,
+        description: repo.description ?? `GitHub: ${repo.full_name}`,
+        status: "in_progress",
+        workspace: {
+          name: repo.name,
+          repoUrl: repo.clone_url,
+          repoRef: repo.default_branch,
+          isPrimary: true,
+        },
+      });
+      linkedProjectId = project.id;
+      const workspaces = await ctx.projects.listWorkspaces(project.id, companyId);
+      linkedWorkspaceId = workspaces[0]?.id;
+      ctx.logger.info("Created project + workspace for repo", {
+        projectId: project.id,
+        slug,
+      });
+    }
+
+    entry.projectId = linkedProjectId;
+    entry.workspaceId = linkedWorkspaceId;
 
     connectedRepos[slug] = entry;
     await setConnectedRepos(ctx, companyId, connectedRepos);

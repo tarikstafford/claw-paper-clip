@@ -556,6 +556,48 @@ export interface WorkerToHostMethods {
     params: { issueId: string; companyId: string },
     result: PluginWorkspace | null,
   ];
+  "projects.create": [
+    params: {
+      companyId: string;
+      name: string;
+      description?: string | null;
+      status?: string;
+      leadAgentId?: string | null;
+      workspace?: {
+        name?: string | null;
+        cwd?: string | null;
+        repoUrl?: string | null;
+        repoRef?: string | null;
+        isPrimary?: boolean;
+      };
+    },
+    result: Project,
+  ];
+  "projects.createWorkspace": [
+    params: {
+      projectId: string;
+      companyId: string;
+      name?: string | null;
+      cwd?: string | null;
+      repoUrl?: string | null;
+      repoRef?: string | null;
+      isPrimary?: boolean;
+    },
+    result: PluginWorkspace,
+  ];
+  "projects.updateWorkspace": [
+    params: {
+      projectId: string;
+      workspaceId: string;
+      companyId: string;
+      name?: string | null;
+      cwd?: string | null;
+      repoUrl?: string | null;
+      repoRef?: string | null;
+      isPrimary?: boolean;
+    },
+    result: PluginWorkspace,
+  ];
 
   // Issues
   "issues.list": [

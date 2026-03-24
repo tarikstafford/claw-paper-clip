@@ -663,6 +663,61 @@ export interface PluginProjectsClient {
    * @see PLUGIN_SPEC.md §20 — Local Tooling
    */
   getWorkspaceForIssue(issueId: string, companyId: string): Promise<PluginWorkspace | null>;
+
+  /**
+   * Create a new project.
+   *
+   * Requires the `projects.create` capability.
+   */
+  create(input: {
+    companyId: string;
+    name: string;
+    description?: string | null;
+    status?: string;
+    leadAgentId?: string | null;
+    workspace?: {
+      name?: string | null;
+      cwd?: string | null;
+      repoUrl?: string | null;
+      repoRef?: string | null;
+      isPrimary?: boolean;
+    };
+  }): Promise<Project>;
+
+  /**
+   * Create a workspace for a project.
+   *
+   * Requires the `project.workspaces.write` capability.
+   */
+  createWorkspace(
+    projectId: string,
+    companyId: string,
+    input: {
+      name?: string | null;
+      cwd?: string | null;
+      repoUrl?: string | null;
+      repoRef?: string | null;
+      isPrimary?: boolean;
+    },
+  ): Promise<PluginWorkspace>;
+
+  /**
+   * Update an existing workspace.
+   *
+   * Requires the `project.workspaces.write` capability.
+   */
+  updateWorkspace(
+    projectId: string,
+    workspaceId: string,
+    companyId: string,
+    input: {
+      name?: string | null;
+      cwd?: string | null;
+      repoUrl?: string | null;
+      repoRef?: string | null;
+      isPrimary?: boolean;
+    },
+  ): Promise<PluginWorkspace>;
 }
 
 /**

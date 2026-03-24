@@ -761,6 +761,90 @@ export function buildHostServices(
           updatedAt: row.updatedAt.toISOString(),
         };
       },
+
+      async create(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        const result = await projects.create(companyId, {
+          name: params.name,
+          description: params.description ?? null,
+          status: (params.status as any) ?? "in_progress",
+          leadAgentId: params.leadAgentId ?? null,
+        });
+        // If a workspace spec was provided, create it on the new project
+        if (params.workspace) {
+          await projects.createWorkspace(result.id, {
+            name: params.workspace.name ?? null,
+            cwd: params.workspace.cwd ?? null,
+            repoUrl: params.workspace.repoUrl ?? null,
+            repoRef: params.workspace.repoRef ?? null,
+            isPrimary: params.workspace.isPrimary ?? true,
+          });
+        }
+        // Re-fetch to include the workspace in the response
+        const full = await projects.getById(result.id);
+        return (full ?? result) as unknown as Project;
+      },
+
+      async createWorkspace(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        const project = await projects.getById(params.projectId);
+        if (!inCompany(project, companyId)) {
+          throw new Error("Project not found in this company");
+        }
+        const row = await projects.createWorkspace(params.projectId, {
+          name: params.name ?? null,
+          cwd: params.cwd ?? null,
+          repoUrl: params.repoUrl ?? null,
+          repoRef: params.repoRef ?? null,
+          isPrimary: params.isPrimary,
+        });
+        if (!row) throw new Error("Failed to create workspace");
+        const path = sanitizeWorkspacePath(row.cwd);
+        const name = sanitizeWorkspaceName(row.name, path);
+        return {
+          id: row.id,
+          projectId: row.projectId,
+          name,
+          path,
+          isPrimary: row.isPrimary,
+          repoUrl: row.repoUrl ?? null,
+          repoRef: row.repoRef ?? null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        };
+      },
+
+      async updateWorkspace(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        const project = await projects.getById(params.projectId);
+        if (!inCompany(project, companyId)) {
+          throw new Error("Project not found in this company");
+        }
+        const row = await projects.updateWorkspace(params.projectId, params.workspaceId, {
+          name: params.name,
+          cwd: params.cwd,
+          repoUrl: params.repoUrl,
+          repoRef: params.repoRef,
+          isPrimary: params.isPrimary,
+        });
+        if (!row) throw new Error("Workspace not found");
+        const path = sanitizeWorkspacePath(row.cwd);
+        const name = sanitizeWorkspaceName(row.name, path);
+        return {
+          id: row.id,
+          projectId: row.projectId,
+          name,
+          path,
+          isPrimary: row.isPrimary,
+          repoUrl: row.repoUrl ?? null,
+          repoRef: row.repoRef ?? null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        };
+      },
     },
 
     issues: {

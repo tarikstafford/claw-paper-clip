@@ -153,6 +153,9 @@ export interface HostServices {
     listWorkspaces(params: WorkerToHostMethods["projects.listWorkspaces"][0]): Promise<WorkerToHostMethods["projects.listWorkspaces"][1]>;
     getPrimaryWorkspace(params: WorkerToHostMethods["projects.getPrimaryWorkspace"][0]): Promise<WorkerToHostMethods["projects.getPrimaryWorkspace"][1]>;
     getWorkspaceForIssue(params: WorkerToHostMethods["projects.getWorkspaceForIssue"][0]): Promise<WorkerToHostMethods["projects.getWorkspaceForIssue"][1]>;
+    create(params: WorkerToHostMethods["projects.create"][0]): Promise<WorkerToHostMethods["projects.create"][1]>;
+    createWorkspace(params: WorkerToHostMethods["projects.createWorkspace"][0]): Promise<WorkerToHostMethods["projects.createWorkspace"][1]>;
+    updateWorkspace(params: WorkerToHostMethods["projects.updateWorkspace"][0]): Promise<WorkerToHostMethods["projects.updateWorkspace"][1]>;
   };
 
   /** Provides `issues.list`, `issues.get`, `issues.create`, `issues.update`, `issues.listComments`, `issues.createComment`. */
@@ -297,6 +300,9 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "projects.listWorkspaces": "project.workspaces.read",
   "projects.getPrimaryWorkspace": "project.workspaces.read",
   "projects.getWorkspaceForIssue": "project.workspaces.read",
+  "projects.create": "projects.create",
+  "projects.createWorkspace": "project.workspaces.write",
+  "projects.updateWorkspace": "project.workspaces.write",
 
   // Issues
   "issues.list": "issues.read",
@@ -475,6 +481,15 @@ export function createHostClientHandlers(
     }),
     "projects.getWorkspaceForIssue": gated("projects.getWorkspaceForIssue", async (params) => {
       return services.projects.getWorkspaceForIssue(params);
+    }),
+    "projects.create": gated("projects.create", async (params) => {
+      return services.projects.create(params);
+    }),
+    "projects.createWorkspace": gated("projects.createWorkspace", async (params) => {
+      return services.projects.createWorkspace(params);
+    }),
+    "projects.updateWorkspace": gated("projects.updateWorkspace", async (params) => {
+      return services.projects.updateWorkspace(params);
     }),
 
     // Issues
