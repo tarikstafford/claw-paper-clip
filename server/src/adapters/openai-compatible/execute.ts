@@ -1,5 +1,7 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
-import { asString, asNumber, buildPaperclipEnv } from "../utils.js";
+import { asString, asNumber } from "../utils.js";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -18,6 +20,34 @@ interface ChatCompletionResponse {
     completion_tokens: number;
     total_tokens: number;
   };
+}
+
+// Paths where Paperclip skill files may live (Docker and local dev)
+const SKILL_CANDIDATES = [
+  "/app/skills/paperclip/SKILL.md",
+  "skills/paperclip/SKILL.md",
+];
+
+async function readFileIfExists(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+async function loadPaperclipSkill(): Promise<string> {
+  for (const candidate of SKILL_CANDIDATES) {
+    const content = await readFileIfExists(candidate);
+    if (content) return content;
+  }
+  return "";
+}
+
+async function loadInstructionsFile(filePath: string): Promise<string> {
+  if (!filePath) return "";
+  const content = await readFileIfExists(filePath);
+  return content ?? "";
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -41,15 +71,57 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   }
 
-  // Build the prompt from context (same shape as other adapters)
-  const systemPrompt = asString(config.systemPrompt, `You are agent ${agent.id} (${agent.name}). You work for a company managed by the Paperclip platform.`);
+  // Build system prompt with full context
+  const instructionsFilePath = asString(config.instructionsFilePath, "");
+  const [paperclipSkill, agentInstructions] = await Promise.all([
+    loadPaperclipSkill(),
+    loadInstructionsFile(instructionsFilePath),
+  ]);
+
+  const customSystemPrompt = asString(config.systemPrompt, "");
   const chatThreadContext = asString(context.paperclipChatThreadContext, "");
   const wakeReason = asString(context.wakeReason, "");
+  const threadId = asString(context.threadId, "");
+
+  // Compose system prompt with identity, instructions, and Paperclip skill
+  const systemParts: string[] = [];
+
+  // Identity
+  systemParts.push(`You are agent ${agent.id} (${agent.name}), company ${agent.companyId}. You work on the Paperclip platform.`);
+
+  // Environment info
+  systemParts.push(`Environment:
+- PAPERCLIP_AGENT_ID: ${agent.id}
+- PAPERCLIP_COMPANY_ID: ${agent.companyId}
+- PAPERCLIP_API_URL: ${process.env.PAPERCLIP_API_URL || "http://localhost:3100"}
+- PAPERCLIP_RUN_ID: ${runId}`);
+
+  // Custom system prompt from config
+  if (customSystemPrompt) {
+    systemParts.push(customSystemPrompt);
+  }
+
+  // Agent instructions file (AGENTS.md)
+  if (agentInstructions) {
+    systemParts.push(`## Agent Instructions\n\n${agentInstructions}`);
+  }
+
+  // Paperclip skill (heartbeat procedure, API reference)
+  if (paperclipSkill) {
+    systemParts.push(`## Paperclip Skill\n\n${paperclipSkill}`);
+  }
+
+  // Chat mode preamble
+  if (wakeReason === "chat_message") {
+    systemParts.push(`This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Only use the Paperclip API if the user explicitly asks about tasks, status, assignments, or work. Do NOT run the full heartbeat procedure unless the user asks for it.`);
+  }
+
+  const systemPrompt = systemParts.join("\n\n---\n\n");
 
   // Build messages array
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
 
-  // If this is a chat message wake, parse the thread context into messages
+  // Parse chat thread context into messages
   if (wakeReason === "chat_message" && chatThreadContext) {
     const lines = chatThreadContext.split("\n");
     for (const line of lines) {
@@ -60,12 +132,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       } else if (agentMatch) {
         messages.push({ role: "assistant", content: agentMatch[1] });
       } else if (line.trim()) {
-        // Treat untagged lines as user messages
         messages.push({ role: "user", content: line.trim() });
       }
     }
   } else {
-    // Non-chat wake — use the rendered prompt as a user message
     const prompt = asString(context.prompt, `Continue your work as ${agent.name}.`);
     messages.push({ role: "user", content: prompt });
   }
@@ -74,11 +144,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   await onMeta?.({
     adapterType: "openai_compatible",
     command: `POST ${baseUrl}/chat/completions`,
-    prompt: messages.map((m) => `[${m.role}]: ${m.content}`).join("\n"),
+    prompt: messages.map((m) => `[${m.role}]: ${m.content.slice(0, 200)}`).join("\n"),
     context,
   });
 
   await onLog("stderr", `[openai-compatible] Calling ${baseUrl}/chat/completions (model: ${model})\n`);
+  if (agentInstructions) await onLog("stderr", `[openai-compatible] Loaded instructions from ${instructionsFilePath}\n`);
+  if (paperclipSkill) await onLog("stderr", `[openai-compatible] Loaded Paperclip skill\n`);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -114,29 +186,32 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const data = (await res.json()) as ChatCompletionResponse;
     const responseText = data.choices?.[0]?.message?.content ?? "";
 
+    // Strip <think>...</think> tags from response before posting
+    const cleanResponse = responseText.replace(/<think>[\s\S]*?<\/think>\s*/g, "").trim();
+
     await onLog("stdout", responseText);
     await onLog("stderr", `[openai-compatible] Response received (${data.usage?.completion_tokens ?? "?"} tokens)\n`);
 
-    // If this was a chat message, post the response back to the chat thread
-    if (wakeReason === "chat_message" && context.threadId) {
+    // Post response back to chat thread
+    if (wakeReason === "chat_message" && threadId) {
       const paperclipApiUrl = process.env.PAPERCLIP_API_URL || "http://localhost:3100";
-      const agentApiKey = ctx.authToken || "";
+      const agentAuthToken = ctx.authToken || "";
 
-      await onLog("stderr", `[openai-compatible] Chat post-back: threadId=${context.threadId}, hasAuthToken=${!!ctx.authToken}, apiUrl=${paperclipApiUrl}\n`);
+      await onLog("stderr", `[openai-compatible] Chat post-back: threadId=${threadId}, hasAuthToken=${!!ctx.authToken}, apiUrl=${paperclipApiUrl}\n`);
 
-      if (agentApiKey) {
+      if (agentAuthToken) {
         try {
-          const postUrl = `${paperclipApiUrl}/api/chat/threads/${context.threadId}/messages`;
+          const postUrl = `${paperclipApiUrl}/api/chat/threads/${threadId}/messages`;
           const postRes = await fetch(postUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${agentApiKey}`,
+              Authorization: `Bearer ${agentAuthToken}`,
             },
-            body: JSON.stringify({ body: responseText }),
+            body: JSON.stringify({ body: cleanResponse }),
           });
           if (postRes.ok) {
-            await onLog("stderr", `[openai-compatible] Posted response to chat thread ${context.threadId}\n`);
+            await onLog("stderr", `[openai-compatible] Posted response to chat thread ${threadId}\n`);
           } else {
             const errBody = await postRes.text();
             await onLog("stderr", `[openai-compatible] Failed to post to chat thread: ${postRes.status} ${errBody}\n`);
@@ -148,7 +223,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         await onLog("stderr", `[openai-compatible] No auth token available — cannot post response back to chat thread\n`);
       }
     } else {
-      await onLog("stderr", `[openai-compatible] Not a chat wake (wakeReason=${wakeReason}, threadId=${context.threadId ?? "none"}) — skipping post-back\n`);
+      await onLog("stderr", `[openai-compatible] Not a chat wake (wakeReason=${wakeReason}, threadId=${threadId || "none"}) — skipping post-back\n`);
     }
 
     return {
@@ -164,7 +239,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       model: data.model || model,
       provider: "openai_compatible",
       billingType: "api",
-      summary: responseText.slice(0, 200),
+      summary: cleanResponse.slice(0, 200),
     };
   } catch (err) {
     if ((err as Error).name === "AbortError") {
