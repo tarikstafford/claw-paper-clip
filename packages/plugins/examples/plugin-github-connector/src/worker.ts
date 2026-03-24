@@ -23,10 +23,12 @@ import {
 } from "./constants.js";
 import {
   createPullRequest,
+  createRepo,
   getFileContents,
   getRepo,
   listBranches,
   listIssues,
+  listOrgs,
   listOrgRepos,
   listUserRepos,
   parseRepoFromUrl,
@@ -575,6 +577,11 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     };
   });
 
+  ctx.data.register("orgs", async () => {
+    const token = await resolveToken(ctx);
+    return listOrgs(ctx, token);
+  });
+
   ctx.data.register("workspace-statuses", async (params) => {
     const companyId = getCompanyId(params);
     const connectedRepos = await getConnectedRepos(ctx, companyId);
@@ -736,6 +743,55 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     return {
       ok: true,
       message: `Connected. Found repos including: ${repos[0]?.full_name ?? "none"}`,
+    };
+  });
+
+  ctx.actions.register("create-repo", async (params) => {
+    const companyId = getCompanyId(params);
+    const name = typeof params.name === "string" ? params.name.trim() : "";
+    const org = typeof params.org === "string" && params.org.length > 0 ? params.org : undefined;
+    const description = typeof params.description === "string" ? params.description : undefined;
+    const isPrivate = params.private !== false;
+
+    if (!name) throw new Error("name is required");
+
+    const token = await resolveToken(ctx);
+    const repo = await createRepo(ctx, token, {
+      name,
+      org,
+      description,
+      private: isPrivate,
+      autoInit: true,
+    });
+
+    // Auto-connect the new repo
+    const connectedRepos = await getConnectedRepos(ctx, companyId);
+    connectedRepos[repo.full_name] = {
+      slug: repo.full_name,
+      cloneUrl: repo.clone_url,
+      defaultBranch: repo.default_branch,
+      private: repo.private,
+      description: repo.description,
+      language: repo.language,
+      connectedAt: new Date().toISOString(),
+    };
+    await setConnectedRepos(ctx, companyId, connectedRepos);
+
+    await ctx.activity.log({
+      companyId,
+      message: `Created and connected GitHub repo ${repo.full_name}`,
+      metadata: { plugin: PLUGIN_ID, repo: repo.full_name },
+    });
+
+    return {
+      ok: true,
+      repo: {
+        slug: repo.full_name,
+        cloneUrl: repo.clone_url,
+        htmlUrl: repo.html_url,
+        defaultBranch: repo.default_branch,
+        private: repo.private,
+      },
     };
   });
 }
@@ -990,6 +1046,65 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
           sha: b.commit.sha,
           protected: b.protected,
         })),
+      };
+    },
+  );
+
+  ctx.tools.register(
+    TOOL_NAMES.createRepo,
+    {
+      displayName: "Create GitHub Repository",
+      description: "Creates a new GitHub repository in a user account or organization.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          org: { type: "string" },
+          description: { type: "string" },
+          private: { type: "boolean" },
+        },
+        required: ["name"],
+      },
+    },
+    async (params, runCtx: ToolRunContext): Promise<ToolResult> => {
+      const { name, org, description } = params as {
+        name: string;
+        org?: string;
+        description?: string;
+        private?: boolean;
+      };
+      const isPrivate = (params as { private?: boolean }).private !== false;
+      const token = await resolveToken(ctx);
+
+      const repo = await createRepo(ctx, token, {
+        name,
+        org,
+        description,
+        private: isPrivate,
+        autoInit: true,
+      });
+
+      // Auto-connect
+      const connected = await getConnectedRepos(ctx, runCtx.companyId);
+      connected[repo.full_name] = {
+        slug: repo.full_name,
+        cloneUrl: repo.clone_url,
+        defaultBranch: repo.default_branch,
+        private: repo.private,
+        description: repo.description,
+        language: repo.language,
+        connectedAt: new Date().toISOString(),
+      };
+      await setConnectedRepos(ctx, runCtx.companyId, connected);
+
+      return {
+        content: `Created repo ${repo.full_name}: ${repo.html_url}`,
+        data: {
+          slug: repo.full_name,
+          cloneUrl: repo.clone_url,
+          htmlUrl: repo.html_url,
+          defaultBranch: repo.default_branch,
+        },
       };
     },
   );

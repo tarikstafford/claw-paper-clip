@@ -185,6 +185,42 @@ export async function getFileContents(
   return githubFetch<GitHubFileContent>(ctx, token, endpoint);
 }
 
+export async function createRepo(
+  ctx: PluginContext,
+  token: string,
+  options: {
+    name: string;
+    org?: string;
+    description?: string;
+    private?: boolean;
+    autoInit?: boolean;
+  },
+): Promise<GitHubRepo> {
+  const endpoint = options.org
+    ? `/orgs/${encodeURIComponent(options.org)}/repos`
+    : "/user/repos";
+  return githubFetch<GitHubRepo>(ctx, token, endpoint, {
+    method: "POST",
+    body: {
+      name: options.name,
+      description: options.description ?? "",
+      private: options.private ?? true,
+      auto_init: options.autoInit ?? true,
+    },
+  });
+}
+
+export async function listOrgs(
+  ctx: PluginContext,
+  token: string,
+): Promise<Array<{ login: string; id: number }>> {
+  return githubFetch<Array<{ login: string; id: number }>>(
+    ctx,
+    token,
+    "/user/orgs?per_page=100",
+  );
+}
+
 export function parseRepoFromUrl(url: string): string | null {
   const match = url.match(/github\.com[/:]([^/]+\/[^/.]+?)(?:\.git)?$/);
   return match?.[1] ?? null;

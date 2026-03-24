@@ -34,6 +34,7 @@ export const TOOL_NAMES = {
   createPr: "create-pr",
   getFileContents: "get-file-contents",
   listBranches: "list-branches",
+  createRepo: "create-repo",
 } as const;
 
 export const DEFAULT_CONFIG = {

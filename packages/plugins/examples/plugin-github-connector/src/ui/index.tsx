@@ -622,10 +622,111 @@ export function GitHubDashboardWidget(props: PluginWidgetProps) {
   );
 }
 
+function CreateRepoForm({ companyId }: { companyId: string }) {
+  const { data: orgs } = usePluginData<Array<{ login: string; id: number }>>(
+    "orgs",
+    {},
+  );
+  const createRepoAction = usePluginAction("create-repo");
+  const [name, setName] = useState("");
+  const [org, setOrg] = useState("");
+  const [description, setDescription] = useState("");
+  const [isPrivate, setIsPrivate] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    setResult(null);
+    try {
+      const res = await createRepoAction({
+        companyId,
+        name: name.trim(),
+        org: org || undefined,
+        description: description || undefined,
+        private: isPrivate,
+      });
+      const data = res as { ok: boolean; repo?: { slug: string; htmlUrl: string } };
+      setResult({ ok: true, message: `Created ${data.repo?.slug ?? name}` });
+      setName("");
+      setDescription("");
+    } catch (err) {
+      setResult({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    setCreating(false);
+  };
+
+  return (
+    <div style={cardStyle}>
+      <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Create New Repository</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <select
+            style={{ ...inputStyle, width: 180 }}
+            value={org}
+            onChange={(e) => setOrg(e.target.value)}
+          >
+            <option value="">Personal account</option>
+            {orgs?.map((o) => (
+              <option key={o.login} value={o.login}>
+                {o.login}
+              </option>
+            ))}
+          </select>
+          <span style={{ color: "#6b7280", alignSelf: "center", fontSize: 16 }}>/</span>
+          <input
+            style={{ ...inputStyle, flex: 1 }}
+            placeholder="repo-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreate();
+            }}
+          />
+        </div>
+        <input
+          style={inputStyle}
+          placeholder="Description (optional)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <label style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+            />
+            Private
+          </label>
+          <button
+            style={btnPrimaryStyle}
+            disabled={creating || !name.trim()}
+            onClick={handleCreate}
+          >
+            {creating ? "Creating..." : "Create Repository"}
+          </button>
+        </div>
+        {result && (
+          <div style={{ fontSize: 12, color: result.ok ? "#4ade80" : "#f87171" }}>
+            {result.message}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GitHubProjectTab(props: PluginDetailTabProps) {
   const companyId = props.context?.companyId ?? "";
   return (
     <div style={containerStyle}>
+      {companyId && <CreateRepoForm companyId={companyId} />}
+      {companyId && <div style={{ marginTop: 16 }} />}
       {companyId && <WorkspaceList companyId={companyId} />}
     </div>
   );

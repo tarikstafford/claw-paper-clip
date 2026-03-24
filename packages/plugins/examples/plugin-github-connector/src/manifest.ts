@@ -250,6 +250,33 @@ const manifest: PaperclipPluginManifestV1 = {
         required: ["repo"],
       },
     },
+    {
+      name: TOOL_NAMES.createRepo,
+      displayName: "Create GitHub Repository",
+      description: "Creates a new GitHub repository in a user account or organization.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Repository name",
+          },
+          org: {
+            type: "string",
+            description: "Organization to create the repo in. If omitted, creates under your user account.",
+          },
+          description: {
+            type: "string",
+            description: "Repository description",
+          },
+          private: {
+            type: "boolean",
+            description: "Whether the repo should be private (default: true)",
+          },
+        },
+        required: ["name"],
+      },
+    },
   ],
   ui: {
     slots: [
