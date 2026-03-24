@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -299,35 +298,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
     }
 
-    // Quick smoke test: run `opencode run --format json "say hello"` with a short prompt
-    // to see if OpenCode works at all before attempting the real prompt.
-    await onLog("stderr", `[paperclip] Running smoke test: ${command} run --format json --model ${model} "say hello"\n`);
-    try {
-      const smoke = await runChildProcess(
-        `${runId}-smoke`,
-        command,
-        ["run", "--format", "json", "--model", model, "--print-logs", "say hello"],
-        { cwd, env: runtimeEnv, timeoutSec: 60, graceSec: 5, onLog: async (stream, chunk) => {
-          await onLog("stderr", `[paperclip:smoke:${stream}] ${chunk}`);
-        }},
-      );
-      await onLog("stderr", `[paperclip] Smoke test exit=${smoke.exitCode} stdout=${smoke.stdout.length}chars stderr=${smoke.stderr.length}chars\n`);
-      if (smoke.stdout.length > 0) {
-        await onLog("stderr", `[paperclip] Smoke stdout: ${smoke.stdout.slice(0, 500)}\n`);
-      }
-      if (smoke.stderr.length > 0 && smoke.exitCode !== 0) {
-        await onLog("stderr", `[paperclip] Smoke stderr: ${smoke.stderr.slice(0, 500)}\n`);
-      }
-    } catch (err) {
-      await onLog("stderr", `[paperclip] Smoke test failed: ${err instanceof Error ? err.message : String(err)}\n`);
-    }
-
-    await onLog("stderr", `[paperclip] Running real prompt (${prompt.length} chars)...\n`);
-
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env: runtimeEnv,
-      stdin: prompt,
       timeoutSec,
       graceSec,
       onLog,
