@@ -79,12 +79,12 @@ function resolveRepoWorkspaceDir(companyId: string, repoUrl: string): string {
   return path.resolve(instanceRoot, "repos", companyId.slice(0, 8), safeName);
 }
 
-async function runGitCommand(args: string[], cwd: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+async function runGitCommand(args: string[], cwd: string, extraEnv?: Record<string, string>): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn("git", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
     });
     let stdout = "";
     let stderr = "";
@@ -95,14 +95,40 @@ async function runGitCommand(args: string[], cwd: string): Promise<{ ok: boolean
   });
 }
 
-async function cloneOrPullRepo(repoUrl: string, targetDir: string, ref?: string | null): Promise<boolean> {
+/**
+ * Build a git-credential-friendly URL by injecting an OAuth token.
+ * GitHub accepts `https://x-access-token:<token>@github.com/...` for
+ * HTTPS clones. We also set GIT_ASKPASS to /bin/true to prevent any
+ * interactive credential prompt from blocking the process.
+ */
+function buildAuthenticatedRepoUrl(repoUrl: string, token: string): string {
+  try {
+    const url = new URL(repoUrl);
+    if (url.protocol === "https:") {
+      url.username = "x-access-token";
+      url.password = token;
+      return url.toString();
+    }
+  } catch { /* not a parseable URL — return as-is */ }
+  return repoUrl;
+}
+
+async function cloneOrPullRepo(repoUrl: string, targetDir: string, ref?: string | null, githubToken?: string | null): Promise<boolean> {
+  const authUrl = githubToken ? buildAuthenticatedRepoUrl(repoUrl, githubToken) : repoUrl;
+  // Prevent interactive credential prompts from hanging the process
+  const extraEnv: Record<string, string> = { GIT_TERMINAL_PROMPT: "0" };
+
   const gitDirExists = await fs.stat(path.join(targetDir, ".git")).then(() => true).catch(() => false);
   if (gitDirExists) {
+    // Update remote URL in case token changed
+    if (githubToken) {
+      await runGitCommand(["remote", "set-url", "origin", authUrl], targetDir, extraEnv);
+    }
     // Pull latest
-    await runGitCommand(["fetch", "--quiet", "origin"], targetDir);
+    await runGitCommand(["fetch", "--quiet", "origin"], targetDir, extraEnv);
     if (ref) {
-      await runGitCommand(["checkout", ref], targetDir);
-      await runGitCommand(["pull", "--quiet", "--ff-only", "origin", ref], targetDir);
+      await runGitCommand(["checkout", ref], targetDir, extraEnv);
+      await runGitCommand(["pull", "--quiet", "--ff-only", "origin", ref], targetDir, extraEnv);
     }
     return true;
   }
@@ -110,8 +136,8 @@ async function cloneOrPullRepo(repoUrl: string, targetDir: string, ref?: string 
   await fs.mkdir(path.dirname(targetDir), { recursive: true });
   const args = ["clone", "--quiet"];
   if (ref) args.push("--branch", ref);
-  args.push(repoUrl, targetDir);
-  const result = await runGitCommand(args, path.dirname(targetDir));
+  args.push(authUrl, targetDir);
+  const result = await runGitCommand(args, path.dirname(targetDir), extraEnv);
   return result.ok;
 }
 const SESSIONED_LOCAL_ADAPTERS = new Set([
@@ -986,6 +1012,22 @@ export function heartbeatService(db: Db) {
     }));
 
     if (projectWorkspaceRows.length > 0) {
+      // Resolve GitHub token for private repo cloning (stored via OAuth flow)
+      let githubToken: string | null = null;
+      const hasRepoOnlyWorkspace = projectWorkspaceRows.some(
+        (ws) => (!readNonEmptyString(ws.cwd) || ws.cwd === REPO_ONLY_CWD_SENTINEL) && readNonEmptyString(ws.repoUrl),
+      );
+      if (hasRepoOnlyWorkspace) {
+        try {
+          const ghSecret = await secretsSvc.getByName(agent.companyId, "GITHUB_TOKEN");
+          if (ghSecret) {
+            githubToken = await secretsSvc.resolveSecretValue(agent.companyId, ghSecret.id, "latest");
+          }
+        } catch (err) {
+          logger.debug({ err }, "Could not resolve GITHUB_TOKEN for repo cloning — will attempt without auth");
+        }
+      }
+
       const missingProjectCwds: string[] = [];
       let hasConfiguredProjectCwd = false;
       for (const workspace of projectWorkspaceRows) {
@@ -997,7 +1039,7 @@ export function heartbeatService(db: Db) {
           const repoRef = readNonEmptyString(workspace.repoRef);
           const targetDir = resolveRepoWorkspaceDir(agent.companyId, repoUrl);
           try {
-            const cloned = await cloneOrPullRepo(repoUrl, targetDir, repoRef);
+            const cloned = await cloneOrPullRepo(repoUrl, targetDir, repoRef, githubToken);
             if (cloned) {
               // Persist the resolved cwd so future runs skip cloning
               await db
