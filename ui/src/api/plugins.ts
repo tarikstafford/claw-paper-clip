@@ -137,7 +137,7 @@ export interface AvailablePluginExample {
   displayName: string;
   description: string;
   localPath: string;
-  tag: "example";
+  tag: "example" | "connector";
 }
 
 /**
