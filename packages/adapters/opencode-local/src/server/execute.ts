@@ -402,17 +402,22 @@ Replace <YOUR_RESPONSE_HERE> with your actual response text (properly JSON-escap
   const initial = await runAttempt(sessionId);
   const initialFailed =
     !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || Boolean(initial.parsed.errorMessage));
-  if (
-    sessionId &&
-    initialFailed &&
-    isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)
-  ) {
+  // Detect stale session errors — can appear even when exit code is 0 (OpenCode logs to stderr but continues)
+  const isStaleSession =
+    sessionId && isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr);
+  if (isStaleSession && (initialFailed || !initial.parsed.sessionId)) {
     await onLog(
       "stderr",
       `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
     );
     const retry = await runAttempt(null);
     return toResult(retry, true);
+  }
+  // If stale session error was logged but the run actually succeeded (e.g. OpenCode auto-recovered),
+  // still clear the session so we don't retry the stale ID next time.
+  if (isStaleSession) {
+    const result = toResult(initial, true);
+    return result;
   }
 
   return toResult(initial);

@@ -1014,10 +1014,10 @@ export function heartbeatService(db: Db) {
     if (projectWorkspaceRows.length > 0) {
       // Resolve GitHub token for private repo cloning (stored via OAuth flow)
       let githubToken: string | null = null;
-      const hasRepoOnlyWorkspace = projectWorkspaceRows.some(
-        (ws) => (!readNonEmptyString(ws.cwd) || ws.cwd === REPO_ONLY_CWD_SENTINEL) && readNonEmptyString(ws.repoUrl),
+      const hasCloneableWorkspace = projectWorkspaceRows.some(
+        (ws) => readNonEmptyString(ws.repoUrl),
       );
-      if (hasRepoOnlyWorkspace) {
+      if (hasCloneableWorkspace) {
         try {
           const ghSecret = await secretsSvc.getByName(agent.companyId, "GITHUB_TOKEN");
           if (ghSecret) {
@@ -1082,6 +1082,32 @@ export function heartbeatService(db: Db) {
             workspaceHints,
             warnings: [],
           };
+        }
+        // Configured cwd doesn't exist — try auto-clone if repoUrl is available
+        if (repoUrl) {
+          const repoRef = readNonEmptyString(workspace.repoRef);
+          const targetDir = resolveRepoWorkspaceDir(agent.companyId, repoUrl);
+          try {
+            const cloned = await cloneOrPullRepo(repoUrl, targetDir, repoRef, githubToken);
+            if (cloned) {
+              await db
+                .update(projectWorkspaces)
+                .set({ cwd: targetDir, updatedAt: new Date() })
+                .where(eq(projectWorkspaces.id, workspace.id));
+              return {
+                cwd: targetDir,
+                source: "project_primary" as const,
+                projectId: resolvedProjectId,
+                workspaceId: workspace.id,
+                repoUrl: workspace.repoUrl,
+                repoRef: workspace.repoRef,
+                workspaceHints,
+                warnings: [],
+              };
+            }
+          } catch (err) {
+            logger.warn({ err, repoUrl, targetDir }, "Auto-clone fallback failed for workspace with missing cwd");
+          }
         }
         missingProjectCwds.push(projectCwd);
       }
