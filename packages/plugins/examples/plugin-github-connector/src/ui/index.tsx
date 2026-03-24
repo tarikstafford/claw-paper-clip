@@ -492,49 +492,98 @@ export function GitHubPage(props: PluginPageProps) {
 }
 
 export function GitHubSettingsPage(props: PluginPageProps) {
-  const { data, loading } = usePluginData<Record<string, unknown>>(
-    "plugin-config",
-  );
-  const testConnection = usePluginAction("test-connection");
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
+  const companyId = props.context?.companyId ?? "";
+  const [oauthStatus, setOauthStatus] = useState<{
+    connected: boolean;
+    description: string | null;
+    oauthConfigured: boolean;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  // Check OAuth status on mount
+  useState(() => {
+    if (!companyId) return;
+    fetch(`/api/github/oauth/status?companyId=${companyId}`, {
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setOauthStatus(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  });
+
+  const handleConnect = () => {
+    window.location.href = `/api/github/oauth/authorize?companyId=${companyId}`;
+  };
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    await fetch(`/api/github/oauth/disconnect?companyId=${companyId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    setOauthStatus({ connected: false, description: null, oauthConfigured: true });
+    setDisconnecting(false);
+  };
 
   return (
     <div style={containerStyle}>
       <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
         GitHub Connector Settings
       </h2>
-      {loading && <div>Loading...</div>}
-      {data && (
+
+      {loading && <div style={{ fontSize: 13 }}>Loading...</div>}
+
+      {!loading && oauthStatus && (
         <div style={cardStyle}>
-          <pre style={{ fontSize: 12, margin: 0, whiteSpace: "pre-wrap" }}>
-            {JSON.stringify(data, null, 2)}
-          </pre>
+          <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>GitHub Connection</h3>
+
+          {oauthStatus.connected ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{
+                  display: "inline-block",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: "#4ade80",
+                }} />
+                <span style={{ fontSize: 14, fontWeight: 500 }}>Connected to GitHub</span>
+              </div>
+              {oauthStatus.description && (
+                <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 12 }}>
+                  {oauthStatus.description}
+                </div>
+              )}
+              <button
+                style={btnDangerStyle}
+                disabled={disconnecting}
+                onClick={handleDisconnect}
+              >
+                {disconnecting ? "Disconnecting..." : "Disconnect GitHub"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 12 }}>
+                Connect your GitHub account to enable repo cloning, issue sync, and agent tools.
+              </p>
+              {oauthStatus.oauthConfigured ? (
+                <button style={btnPrimaryStyle} onClick={handleConnect}>
+                  Connect with GitHub
+                </button>
+              ) : (
+                <div style={{ fontSize: 12, color: "#f87171" }}>
+                  GitHub OAuth is not configured on the server. Ask your admin to set
+                  GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET environment variables.
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
-      <button
-        style={btnStyle}
-        disabled={testing}
-        onClick={async () => {
-          setTesting(true);
-          setTestResult(null);
-          try {
-            const result = await testConnection({});
-            setTestResult(
-              (result as { message?: string })?.message ?? "Connected",
-            );
-          } catch (err) {
-            setTestResult(
-              `Failed: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-          setTesting(false);
-        }}
-      >
-        {testing ? "Testing..." : "Test Connection"}
-      </button>
-      {testResult && (
-        <div style={{ marginTop: 8, fontSize: 13 }}>{testResult}</div>
       )}
     </div>
   );

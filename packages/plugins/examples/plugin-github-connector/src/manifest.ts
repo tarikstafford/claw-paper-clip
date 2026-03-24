@@ -92,7 +92,7 @@ const manifest: PaperclipPluginManifestV1 = {
         default: DEFAULT_CONFIG.defaultBranch,
       },
     },
-    required: ["githubTokenSecretRef"],
+    required: [],
   },
   jobs: [
     {

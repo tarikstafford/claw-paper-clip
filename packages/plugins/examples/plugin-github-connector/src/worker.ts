@@ -84,12 +84,22 @@ async function getConfig(ctx: PluginContext): Promise<GitHubConnectorConfig> {
 
 async function resolveToken(ctx: PluginContext): Promise<string> {
   const config = await getConfig(ctx);
-  if (!config.githubTokenSecretRef) {
-    throw new Error(
-      "GitHub token not configured. Set githubTokenSecretRef in plugin settings.",
-    );
+
+  // Try explicit secret ref from config first
+  if (config.githubTokenSecretRef) {
+    return ctx.secrets.resolve(config.githubTokenSecretRef);
   }
-  return ctx.secrets.resolve(config.githubTokenSecretRef);
+
+  // Fall back to the well-known GITHUB_TOKEN secret created by OAuth flow
+  try {
+    return await ctx.secrets.resolve("secret:GITHUB_TOKEN:latest");
+  } catch {
+    // ignore — secret doesn't exist
+  }
+
+  throw new Error(
+    "GitHub not connected. Use the GitHub settings page to connect via OAuth, or set githubTokenSecretRef manually.",
+  );
 }
 
 function getCompanyId(params: Record<string, unknown>): string {
@@ -1072,8 +1082,8 @@ const plugin: PaperclipPlugin = definePlugin({
     const typed = config as GitHubConnectorConfig;
 
     if (!typed.githubTokenSecretRef) {
-      errors.push(
-        "githubTokenSecretRef is required. Create a GitHub PAT secret first.",
+      warnings.push(
+        "No explicit githubTokenSecretRef set. The plugin will use the GITHUB_TOKEN secret from OAuth if available.",
       );
     }
     if (
