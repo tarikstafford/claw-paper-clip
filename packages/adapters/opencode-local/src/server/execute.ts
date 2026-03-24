@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -277,7 +278,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (model) args.push("--model", model);
     if (variant) args.push("--variant", variant);
     if (extraArgs.length > 0) args.push(...extraArgs);
-    // OpenCode takes the prompt as a positional argument, not via stdin.
+    // OpenCode takes the prompt as positional argument(s).
     args.push(prompt);
     return args;
   };
@@ -298,13 +299,41 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
     }
 
+    // Log the exact command for debugging
+    await onLog("stderr", `[paperclip] Running: ${command} ${args.slice(0, -1).join(" ")} <prompt ${prompt.length} chars>\n`);
+
+    // Check opencode version to verify it's reachable
+    try {
+      const versionProc = await runChildProcess(
+        `${runId}-version`,
+        command,
+        ["version"],
+        { cwd, env: runtimeEnv, timeoutSec: 10, graceSec: 3, onLog: async () => {} },
+      );
+      await onLog("stderr", `[paperclip] OpenCode version: ${versionProc.stdout.trim() || versionProc.stderr.trim() || "unknown"} (exit=${versionProc.exitCode})\n`);
+    } catch (err) {
+      await onLog("stderr", `[paperclip] OpenCode version check failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+
+    // Check if auth.json exists
+    const authPath = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+    const authExists = await fs.stat(authPath).then(() => true).catch(() => false);
+    await onLog("stderr", `[paperclip] auth.json at ${authPath}: ${authExists ? "exists" : "MISSING"}\n`);
+    if (authExists) {
+      const authContent = await fs.readFile(authPath, "utf8").catch(() => "unreadable");
+      const keys = Object.keys(JSON.parse(authContent)).filter(k => k !== "_generated");
+      await onLog("stderr", `[paperclip] auth.json providers: ${keys.join(", ") || "none"}\n`);
+    }
+
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env: runtimeEnv,
+      stdin: prompt,
       timeoutSec,
       graceSec,
       onLog,
     });
+
     return {
       proc,
       rawStderr: proc.stderr,
