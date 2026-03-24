@@ -22,8 +22,8 @@ import { ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-/** Default timeout for OpenCode runs (15 minutes). */
-const DEFAULT_TIMEOUT_SEC = 900;
+/** Default timeout for OpenCode runs (disabled — OpenCode manages its own lifecycle). */
+const DEFAULT_TIMEOUT_SEC = 0;
 
 function firstNonEmptyLine(text: string): string {
   return (
