@@ -91,7 +91,7 @@ interface AvailablePluginExample {
   displayName: string;
   description: string;
   localPath: string;
-  tag: "example";
+  tag: "example" | "connector";
 }
 
 /** Response body for GET /api/plugins/:pluginId/health */
@@ -138,6 +138,14 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
     description: "Reference plugin that demonstrates the current Paperclip plugin API surface, bridge flows, UI extension surfaces, jobs, webhooks, tools, streams, and trusted local workspace/process demos.",
     localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
     tag: "example",
+  },
+  {
+    packageName: "@paperclipai/plugin-github-connector",
+    pluginKey: "paperclip-github-connector",
+    displayName: "GitHub Connector",
+    description: "Connects GitHub repos to agent workspaces with selective repo connection, auto-clone, issue sync, webhooks, and agent tools for GitHub operations.",
+    localPath: "packages/plugins/examples/plugin-github-connector",
+    tag: "connector",
   },
 ];
 
