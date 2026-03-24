@@ -299,31 +299,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
     }
 
-    // Log the exact command for debugging
-    await onLog("stderr", `[paperclip] Running: ${command} ${args.slice(0, -1).join(" ")} <prompt ${prompt.length} chars>\n`);
-
-    // Check opencode version to verify it's reachable
+    // Quick smoke test: run `opencode run --format json "say hello"` with a short prompt
+    // to see if OpenCode works at all before attempting the real prompt.
+    await onLog("stderr", `[paperclip] Running smoke test: ${command} run --format json --model ${model} "say hello"\n`);
     try {
-      const versionProc = await runChildProcess(
-        `${runId}-version`,
+      const smoke = await runChildProcess(
+        `${runId}-smoke`,
         command,
-        ["version"],
-        { cwd, env: runtimeEnv, timeoutSec: 10, graceSec: 3, onLog: async () => {} },
+        ["run", "--format", "json", "--model", model, "--print-logs", "say hello"],
+        { cwd, env: runtimeEnv, timeoutSec: 60, graceSec: 5, onLog: async (stream, chunk) => {
+          await onLog("stderr", `[paperclip:smoke:${stream}] ${chunk}`);
+        }},
       );
-      await onLog("stderr", `[paperclip] OpenCode version: ${versionProc.stdout.trim() || versionProc.stderr.trim() || "unknown"} (exit=${versionProc.exitCode})\n`);
+      await onLog("stderr", `[paperclip] Smoke test exit=${smoke.exitCode} stdout=${smoke.stdout.length}chars stderr=${smoke.stderr.length}chars\n`);
+      if (smoke.stdout.length > 0) {
+        await onLog("stderr", `[paperclip] Smoke stdout: ${smoke.stdout.slice(0, 500)}\n`);
+      }
+      if (smoke.stderr.length > 0 && smoke.exitCode !== 0) {
+        await onLog("stderr", `[paperclip] Smoke stderr: ${smoke.stderr.slice(0, 500)}\n`);
+      }
     } catch (err) {
-      await onLog("stderr", `[paperclip] OpenCode version check failed: ${err instanceof Error ? err.message : String(err)}\n`);
+      await onLog("stderr", `[paperclip] Smoke test failed: ${err instanceof Error ? err.message : String(err)}\n`);
     }
 
-    // Check if auth.json exists
-    const authPath = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
-    const authExists = await fs.stat(authPath).then(() => true).catch(() => false);
-    await onLog("stderr", `[paperclip] auth.json at ${authPath}: ${authExists ? "exists" : "MISSING"}\n`);
-    if (authExists) {
-      const authContent = await fs.readFile(authPath, "utf8").catch(() => "unreadable");
-      const keys = Object.keys(JSON.parse(authContent)).filter(k => k !== "_generated");
-      await onLog("stderr", `[paperclip] auth.json providers: ${keys.join(", ") || "none"}\n`);
-    }
+    await onLog("stderr", `[paperclip] Running real prompt (${prompt.length} chars)...\n`);
 
     const proc = await runChildProcess(runId, command, args, {
       cwd,
