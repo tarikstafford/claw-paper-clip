@@ -1,5 +1,18 @@
 #!/bin/sh
 
+# ---------------------------------------------------------------------------
+# Fix ownership on persistent volume mount.
+# Railway (and Docker named volumes) mount /paperclip as root.  The app runs
+# as the `node` user, so we chown the mount point before dropping privileges.
+# ---------------------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+  chown -R node:node /paperclip /agents 2>/dev/null || true
+  # Re-exec this script as the node user, preserving all arguments.
+  exec gosu node "$0" "$@"
+fi
+
+# --- Everything below runs as `node` ---
+
 # Write OpenCode auth.json from environment variables so providers can authenticate.
 # OpenCode reads credentials from ~/.local/share/opencode/auth.json, not env vars.
 # The auth schema uses { type: "api", key: "<api-key>" } per provider ID.
