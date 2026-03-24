@@ -2,16 +2,17 @@
 
 # Write OpenCode auth.json from environment variables so providers can authenticate.
 # OpenCode reads credentials from ~/.local/share/opencode/auth.json, not env vars.
+# The auth schema uses { type: "api", key: "<api-key>" } per provider ID.
 OPENCODE_AUTH_DIR="$HOME/.local/share/opencode"
 mkdir -p "$OPENCODE_AUTH_DIR"
-cat > "$OPENCODE_AUTH_DIR/auth.json" <<AUTHEOF
-{
-$([ -n "$MINIMAX_API_KEY" ] && echo "  \"minimax\": { \"type\": \"api\", \"apiKey\": \"$MINIMAX_API_KEY\" },")
-$([ -n "$ANTHROPIC_API_KEY" ] && echo "  \"anthropic\": { \"type\": \"api\", \"apiKey\": \"$ANTHROPIC_API_KEY\" },")
-$([ -n "$OPENAI_API_KEY" ] && echo "  \"openai\": { \"type\": \"api\", \"apiKey\": \"$OPENAI_API_KEY\" },")
-  "_generated": true
-}
-AUTHEOF
+node -e "
+const auth = {};
+if (process.env.MINIMAX_API_KEY) auth.minimax = { type: 'api', key: process.env.MINIMAX_API_KEY };
+if (process.env.ANTHROPIC_API_KEY) auth.anthropic = { type: 'api', key: process.env.ANTHROPIC_API_KEY };
+if (process.env.OPENAI_API_KEY) auth.openai = { type: 'api', key: process.env.OPENAI_API_KEY };
+require('fs').writeFileSync('$OPENCODE_AUTH_DIR/auth.json', JSON.stringify(auth, null, 2));
+console.log('[paperclip] Wrote OpenCode auth.json with providers:', Object.keys(auth).join(', '));
+"
 
 # Initialize /agents as a git repo with AGENTS.md
 if [ ! -d /agents/.git ]; then
