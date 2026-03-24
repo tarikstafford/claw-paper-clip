@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -10,6 +9,7 @@ import {
   parseObject,
   buildPaperclipEnv,
   joinPromptSections,
+  listPaperclipSkillEntries,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
@@ -21,10 +21,9 @@ import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "./parse.js";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const PAPERCLIP_SKILLS_CANDIDATES = [
-  path.resolve(__moduleDir, "../../skills"),
-  path.resolve(__moduleDir, "../../../../../skills"),
-];
+
+/** Default timeout for OpenCode runs (15 minutes). */
+const DEFAULT_TIMEOUT_SEC = 900;
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -46,45 +45,45 @@ function resolveOpenCodeBiller(env: Record<string, string>, provider: string | n
   return inferOpenAiCompatibleBiller(env, null) ?? provider ?? "unknown";
 }
 
-function claudeSkillsHome(): string {
-  return path.join(os.homedir(), ".claude", "skills");
-}
+/**
+ * Read all SKILL.md files and return their combined content for prompt injection.
+ *
+ * OpenCode doesn't discover skills from filesystem directories the way Claude Code
+ * does via `--add-dir`. Instead, we read the skill markdown files and inject their
+ * content directly into the stdin prompt so the model receives them.
+ */
+async function collectSkillsContent(
+  onLog: AdapterExecutionContext["onLog"],
+): Promise<string> {
+  const entries = await listPaperclipSkillEntries(__moduleDir);
+  if (entries.length === 0) return "";
 
-async function resolvePaperclipSkillsDir(): Promise<string | null> {
-  for (const candidate of PAPERCLIP_SKILLS_CANDIDATES) {
-    const isDir = await fs.stat(candidate).then((s) => s.isDirectory()).catch(() => false);
-    if (isDir) return candidate;
-  }
-  return null;
-}
-
-async function ensureOpenCodeSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
-  const skillsDir = await resolvePaperclipSkillsDir();
-  if (!skillsDir) return;
-
-  const skillsHome = claudeSkillsHome();
-  await fs.mkdir(skillsHome, { recursive: true });
-  const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+  const sections: string[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const source = path.join(skillsDir, entry.name);
-    const target = path.join(skillsHome, entry.name);
-    const existing = await fs.lstat(target).catch(() => null);
-    if (existing) continue;
-
+    const skillPath = path.join(entry.source, "SKILL.md");
     try {
-      await fs.symlink(source, target);
+      const content = await fs.readFile(skillPath, "utf8");
+      if (content.trim()) {
+        // Strip YAML frontmatter (---\n...\n---) — it's metadata, not instructions.
+        const stripped = content.replace(/^---\n[\s\S]*?\n---\n*/, "").trim();
+        if (stripped) {
+          sections.push(stripped);
+          await onLog(
+            "stderr",
+            `[paperclip] Loaded skill "${entry.name}" into prompt (${stripped.length} chars)\n`,
+          );
+        }
+      }
+    } catch {
       await onLog(
         "stderr",
-        `[paperclip] Injected OpenCode skill "${entry.name}" into ${skillsHome}\n`,
-      );
-    } catch (err) {
-      await onLog(
-        "stderr",
-        `[paperclip] Failed to inject OpenCode skill "${entry.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Skill "${entry.name}" has no SKILL.md, skipping\n`,
       );
     }
   }
+
+  if (sections.length === 0) return "";
+  return sections.join("\n\n---\n\n");
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -115,7 +114,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  await ensureOpenCodeSkillsInjected(onLog);
+  const skillsContent = await collectSkillsContent(onLog);
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -179,7 +178,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     env: runtimeEnv,
   });
 
-  const timeoutSec = asNumber(config.timeoutSec, 0);
+  const timeoutSec = asNumber(config.timeoutSec, DEFAULT_TIMEOUT_SEC);
   const graceSec = asNumber(config.graceSec, 20);
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
@@ -257,6 +256,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const prompt = joinPromptSections([
+    skillsContent,
     instructionsPrefix,
     renderedBootstrapPrompt,
     sessionHandoffNote,
@@ -264,6 +264,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ]);
   const promptMetrics = {
     promptChars: prompt.length,
+    skillsChars: skillsContent.length,
     instructionsChars: instructionsPrefix.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,

@@ -608,30 +608,41 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               ))}
             </div>
           )}
-          <div className="flex flex-col items-start gap-2">
-            <Button
-              variant="outline"
-              size="xs"
-              className="h-7 px-2.5"
-              onClick={() => {
-                setWorkspaceMode("local");
-                setWorkspaceError(null);
-              }}
-            >
-              Add workspace local folder
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              className="h-7 px-2.5"
-              onClick={() => {
-                setWorkspaceMode("repo");
-                setWorkspaceError(null);
-              }}
-            >
-              Add workspace repo
-            </Button>
-          </div>
+          {(() => {
+            const hasLocalWorkspace = workspaces.some((ws) => ws.cwd && ws.cwd !== REPO_ONLY_CWD_SENTINEL);
+            const hasRepoWorkspace = workspaces.some((ws) => ws.repoUrl);
+            if (hasLocalWorkspace && hasRepoWorkspace) return null;
+            return (
+              <div className="flex flex-col items-start gap-2">
+                {!hasLocalWorkspace && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-7 px-2.5"
+                    onClick={() => {
+                      setWorkspaceMode("local");
+                      setWorkspaceError(null);
+                    }}
+                  >
+                    Add workspace local folder
+                  </Button>
+                )}
+                {!hasRepoWorkspace && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-7 px-2.5"
+                    onClick={() => {
+                      setWorkspaceMode("repo");
+                      setWorkspaceError(null);
+                    }}
+                  >
+                    Add workspace repo
+                  </Button>
+                )}
+              </div>
+            );
+          })()}
           {workspaceMode === "local" && (
             <div className="space-y-1.5 rounded-md border border-border p-2">
               <div className="flex items-center gap-2">
