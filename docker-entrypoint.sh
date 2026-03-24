@@ -13,11 +13,23 @@ fi
 
 # --- Everything below runs as `node` ---
 
+# Ensure required directories exist inside the persistent volume.
+# The volume starts empty on first deploy, so we must create them at runtime.
+mkdir -p /paperclip/instances/default/workspaces \
+         /paperclip/instances/default/logs \
+         /paperclip/instances/default/repos \
+         /paperclip/instances/default/data/storage \
+         /paperclip/instances/default/secrets \
+         /paperclip/.config/opencode \
+         /paperclip/.local/share/opencode
+
+# Copy OpenCode provider config into the volume (overwrite each deploy so it stays current).
+cp /app/opencode.json /paperclip/.config/opencode/opencode.json
+
 # Write OpenCode auth.json from environment variables so providers can authenticate.
 # OpenCode reads credentials from ~/.local/share/opencode/auth.json, not env vars.
 # The auth schema uses { type: "api", key: "<api-key>" } per provider ID.
-OPENCODE_AUTH_DIR="$HOME/.local/share/opencode"
-mkdir -p "$OPENCODE_AUTH_DIR"
+OPENCODE_AUTH_DIR="/paperclip/.local/share/opencode"
 node -e "
 const auth = {};
 if (process.env.MINIMAX_API_KEY) auth.minimax = { type: 'api', key: process.env.MINIMAX_API_KEY };
