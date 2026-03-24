@@ -59,5 +59,5 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
 );
 
 export function getCLIAdapter(type: string): CLIAdapterModule {
-  return adaptersByType.get(type) ?? processCLIAdapter;
+  return adaptersByType.get(type) ?? openCodeLocalCLIAdapter;
 }

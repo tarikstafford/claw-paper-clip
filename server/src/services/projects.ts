@@ -222,10 +222,21 @@ function readNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function isPlausibleAbsolutePath(value: string): boolean {
+  // Unix: at least 2 segments (e.g. /Users/foo), Windows: drive letter + segment
+  if (value.startsWith("/")) {
+    const segments = value.split("/").filter(Boolean);
+    return segments.length >= 2;
+  }
+  return /^[A-Za-z]:[\\/].+[\\/].+/.test(value);
+}
+
 function normalizeWorkspaceCwd(value: unknown): string | null {
   const cwd = readNonEmptyString(value);
   if (!cwd) return null;
-  return cwd === REPO_ONLY_CWD_SENTINEL ? null : cwd;
+  if (cwd === REPO_ONLY_CWD_SENTINEL) return null;
+  if (!isPlausibleAbsolutePath(cwd)) return null;
+  return cwd;
 }
 
 function deriveNameFromCwd(cwd: string): string {

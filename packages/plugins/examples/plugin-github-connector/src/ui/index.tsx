@@ -622,7 +622,7 @@ export function GitHubDashboardWidget(props: PluginWidgetProps) {
   );
 }
 
-function CreateRepoForm({ companyId }: { companyId: string }) {
+function CreateRepoForm({ companyId, projectId }: { companyId: string; projectId?: string }) {
   const { data: orgs } = usePluginData<Array<{ login: string; id: number }>>(
     "orgs",
     {},
@@ -642,6 +642,7 @@ function CreateRepoForm({ companyId }: { companyId: string }) {
     try {
       const res = await createRepoAction({
         companyId,
+        projectId,
         name: name.trim(),
         org: org || undefined,
         description: description || undefined,
@@ -723,9 +724,10 @@ function CreateRepoForm({ companyId }: { companyId: string }) {
 
 export function GitHubProjectTab(props: PluginDetailTabProps) {
   const companyId = props.context?.companyId ?? "";
+  const projectId = props.context?.entityId ?? "";
   return (
     <div style={containerStyle}>
-      {companyId && <CreateRepoForm companyId={companyId} />}
+      {companyId && <CreateRepoForm companyId={companyId} projectId={projectId || undefined} />}
       {companyId && <div style={{ marginTop: 16 }} />}
       {companyId && <WorkspaceList companyId={companyId} />}
     </div>

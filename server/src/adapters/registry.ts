@@ -170,8 +170,8 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
 export function getServerAdapter(type: string): ServerAdapterModule {
   const adapter = adaptersByType.get(type);
   if (!adapter) {
-    // Fall back to process adapter for unknown types
-    return processAdapter;
+    // Fall back to opencode_local adapter for unknown types
+    return openCodeLocalAdapter;
   }
   return adapter;
 }

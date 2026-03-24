@@ -1,5 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
+import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import type { BillingType } from "@paperclipai/shared";
@@ -49,6 +52,68 @@ const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
+
+// ---------------------------------------------------------------------------
+// Repo auto-clone helpers for cloud workspace resolution
+// ---------------------------------------------------------------------------
+
+function parseRepoSlug(repoUrl: string): string | null {
+  try {
+    const url = new URL(repoUrl);
+    const segments = url.pathname.replace(/\.git$/i, "").split("/").filter(Boolean);
+    if (segments.length >= 2) return `${segments[0]}/${segments[1]}`;
+  } catch { /* not a URL */ }
+  return null;
+}
+
+function resolveRepoWorkspaceDir(companyId: string, repoUrl: string): string {
+  const slug = parseRepoSlug(repoUrl);
+  const safeName = slug
+    ? slug.replace(/\//g, "--")
+    : crypto.createHash("sha256").update(repoUrl).digest("hex").slice(0, 12);
+  const instanceRoot = path.resolve(
+    process.env.PAPERCLIP_HOME?.trim() || path.resolve(os.homedir(), ".paperclip"),
+    "instances",
+    process.env.PAPERCLIP_INSTANCE_ID?.trim() || "default",
+  );
+  return path.resolve(instanceRoot, "repos", companyId.slice(0, 8), safeName);
+}
+
+async function runGitCommand(args: string[], cwd: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn("git", args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => { stdout += String(chunk); });
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", (err) => resolve({ ok: false, stdout, stderr: err.message }));
+    child.on("close", (code) => resolve({ ok: code === 0, stdout, stderr }));
+  });
+}
+
+async function cloneOrPullRepo(repoUrl: string, targetDir: string, ref?: string | null): Promise<boolean> {
+  const gitDirExists = await fs.stat(path.join(targetDir, ".git")).then(() => true).catch(() => false);
+  if (gitDirExists) {
+    // Pull latest
+    await runGitCommand(["fetch", "--quiet", "origin"], targetDir);
+    if (ref) {
+      await runGitCommand(["checkout", ref], targetDir);
+      await runGitCommand(["pull", "--quiet", "--ff-only", "origin", ref], targetDir);
+    }
+    return true;
+  }
+  // Clone fresh
+  await fs.mkdir(path.dirname(targetDir), { recursive: true });
+  const args = ["clone", "--quiet"];
+  if (ref) args.push("--branch", ref);
+  args.push(repoUrl, targetDir);
+  const result = await runGitCommand(args, path.dirname(targetDir));
+  return result.ok;
+}
 const SESSIONED_LOCAL_ADAPTERS = new Set([
   "claude_local",
   "codex_local",
@@ -880,7 +945,23 @@ export function heartbeatService(db: Db) {
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
           .then((rows) => rows[0]?.projectId ?? null)
       : null;
-    const resolvedProjectId = issueProjectId ?? contextProjectId;
+    let resolvedProjectId = issueProjectId ?? contextProjectId;
+
+    // Auto-resolve: if no project context, find the company's primary project that has workspaces
+    if (!resolvedProjectId) {
+      const companyProject = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .innerJoin(projectWorkspaces, eq(projects.id, projectWorkspaces.projectId))
+        .where(eq(projects.companyId, agent.companyId))
+        .orderBy(asc(projects.createdAt))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (companyProject) {
+        resolvedProjectId = companyProject.id;
+      }
+    }
+
     const useProjectWorkspace = opts?.useProjectWorkspace !== false;
     const workspaceProjectId = useProjectWorkspace ? resolvedProjectId : null;
 
@@ -909,6 +990,37 @@ export function heartbeatService(db: Db) {
       let hasConfiguredProjectCwd = false;
       for (const workspace of projectWorkspaceRows) {
         const projectCwd = readNonEmptyString(workspace.cwd);
+        const repoUrl = readNonEmptyString(workspace.repoUrl);
+
+        // Repo-only workspace: auto-resolve a cwd by cloning the repo
+        if ((!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) && repoUrl) {
+          const repoRef = readNonEmptyString(workspace.repoRef);
+          const targetDir = resolveRepoWorkspaceDir(agent.companyId, repoUrl);
+          try {
+            const cloned = await cloneOrPullRepo(repoUrl, targetDir, repoRef);
+            if (cloned) {
+              // Persist the resolved cwd so future runs skip cloning
+              await db
+                .update(projectWorkspaces)
+                .set({ cwd: targetDir, updatedAt: new Date() })
+                .where(eq(projectWorkspaces.id, workspace.id));
+              return {
+                cwd: targetDir,
+                source: "project_primary" as const,
+                projectId: resolvedProjectId,
+                workspaceId: workspace.id,
+                repoUrl: workspace.repoUrl,
+                repoRef: workspace.repoRef,
+                workspaceHints,
+                warnings: [],
+              };
+            }
+          } catch (err) {
+            logger.warn({ err, repoUrl, targetDir }, "Auto-clone failed for repo-only workspace");
+          }
+          continue;
+        }
+
         if (!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) {
           continue;
         }
@@ -1539,7 +1651,7 @@ export function heartbeatService(db: Db) {
     );
     const config = parseObject(agent.adapterConfig);
     // Application-wide defaults: PAPERCLIP_DEFAULT_ADAPTER_TYPE and PAPERCLIP_DEFAULT_MODEL
-    const effectiveAdapterType = agent.adapterType || process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "claude_local";
+    const effectiveAdapterType = agent.adapterType || process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "opencode_local";
     if (process.env.PAPERCLIP_DEFAULT_MODEL && !config.model) {
       config.model = process.env.PAPERCLIP_DEFAULT_MODEL;
     }

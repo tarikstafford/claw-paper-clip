@@ -94,7 +94,10 @@ export function NewProjectDialog() {
     setWorkspaceError(null);
   }
 
-  const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+  const isAbsolutePath = (value: string) => {
+    if (value.startsWith("/")) return value.split("/").filter(Boolean).length >= 2;
+    return /^[A-Za-z]:[\\/].+[\\/].+/.test(value);
+  };
 
   const isGitHubRepoUrl = (value: string) => {
     try {

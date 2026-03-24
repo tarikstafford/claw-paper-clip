@@ -811,6 +811,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const org = typeof params.org === "string" && params.org.length > 0 ? params.org : undefined;
     const description = typeof params.description === "string" ? params.description : undefined;
     const isPrivate = params.private !== false;
+    const projectId = typeof params.projectId === "string" ? params.projectId : undefined;
 
     if (!name) throw new Error("name is required");
 
@@ -825,7 +826,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     // Auto-connect the new repo
     const connectedRepos = await getConnectedRepos(ctx, companyId);
-    connectedRepos[repo.full_name] = {
+    const entry: ConnectedRepo = {
       slug: repo.full_name,
       cloneUrl: repo.clone_url,
       defaultBranch: repo.default_branch,
@@ -834,6 +835,41 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       language: repo.language,
       connectedAt: new Date().toISOString(),
     };
+
+    // Link to project workspace if a projectId was provided
+    if (projectId) {
+      const ws = await ctx.projects.createWorkspace(projectId, companyId, {
+        name: repo.name,
+        repoUrl: repo.clone_url,
+        repoRef: repo.default_branch,
+        isPrimary: true,
+      });
+      entry.projectId = projectId;
+      entry.workspaceId = ws.id;
+      ctx.logger.info("Created workspace for new repo", {
+        projectId,
+        workspaceId: ws.id,
+        slug: repo.full_name,
+      });
+    } else {
+      // No projectId — find or create a project by name match (same as connect-repo)
+      const existingProjects = await ctx.projects.list({ companyId, limit: 200, offset: 0 });
+      const nameMatch = existingProjects.find(
+        (p) => p.name.toLowerCase() === repo.name.toLowerCase(),
+      );
+      if (nameMatch) {
+        const ws = await ctx.projects.createWorkspace(nameMatch.id, companyId, {
+          name: repo.name,
+          repoUrl: repo.clone_url,
+          repoRef: repo.default_branch,
+          isPrimary: true,
+        });
+        entry.projectId = nameMatch.id;
+        entry.workspaceId = ws.id;
+      }
+    }
+
+    connectedRepos[repo.full_name] = entry;
     await setConnectedRepos(ctx, companyId, connectedRepos);
 
     await ctx.activity.log({
