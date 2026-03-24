@@ -293,6 +293,10 @@ export interface PluginWorkspace {
   path: string;
   /** Whether this is the project's primary workspace. */
   isPrimary: boolean;
+  /** Repository URL associated with this workspace (e.g. a GitHub clone URL). */
+  repoUrl: string | null;
+  /** Repository ref / branch hint for this workspace. */
+  repoRef: string | null;
   /** ISO 8601 creation timestamp. */
   createdAt: string;
   /** ISO 8601 last-updated timestamp. */
