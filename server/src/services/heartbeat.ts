@@ -11,6 +11,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  chatMessages,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -2214,6 +2215,31 @@ export function heartbeatService(db: Db) {
           },
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
+      }
+
+      // Server-side chat response: if this run was triggered by a chat message,
+      // post the agent's summary back to the thread so the user sees the reply.
+      // This is more reliable than expecting the agent/model to execute a curl command.
+      const chatThreadId = readNonEmptyString(context.threadId);
+      const chatWakeReason = readNonEmptyString(context.wakeReason);
+      const agentSummary = readNonEmptyString(adapterResult.summary);
+      if (chatThreadId && chatWakeReason === "chat_message" && agentSummary && outcome === "succeeded") {
+        try {
+          await db.insert(chatMessages).values({
+            threadId: chatThreadId,
+            senderType: "agent",
+            senderAgentId: agent.id,
+            body: agentSummary,
+            processingStatus: "processed",
+          });
+          publishLiveEvent({
+            companyId: agent.companyId,
+            type: "chat.message.created",
+            payload: { threadId: chatThreadId, agentId: agent.id },
+          });
+        } catch (chatErr) {
+          logger.warn({ err: chatErr, runId, threadId: chatThreadId }, "Failed to post agent chat response");
+        }
       }
 
       if (finalizedRun) {
