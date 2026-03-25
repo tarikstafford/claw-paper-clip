@@ -189,9 +189,17 @@ export function githubOAuthRoutes(db: Db) {
       }
     }
 
-    // Redirect back to the plugins page
-    const redirectUrl = `/instance/settings/plugins?github=connected&user=${encodeURIComponent(userData.login ?? "")}`;
-    res.redirect(redirectUrl);
+    // Close the popup window (if opened via window.open) and signal success.
+    // If not in a popup, redirect to the plugins page.
+    res.send(`<!DOCTYPE html>
+<html><head><title>GitHub Connected</title></head>
+<body>
+<p>GitHub connected successfully. You can close this window.</p>
+<script>
+  if (window.opener) { window.close(); }
+  else { window.location.href = "/instance/settings/plugins?github=connected&user=${encodeURIComponent(userData.login ?? "")}"; }
+</script>
+</body></html>`);
   });
 
   /**

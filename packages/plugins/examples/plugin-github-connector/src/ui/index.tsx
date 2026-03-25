@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   usePluginAction,
   usePluginData,
@@ -500,9 +500,9 @@ export function GitHubSettingsPage(props: PluginPageProps) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
-  // Check OAuth status on mount
-  useState(() => {
+  const refreshStatus = useCallback(() => {
     if (!companyId) return;
     fetch(`/api/github/oauth/status?companyId=${companyId}`, {
       credentials: "include",
@@ -511,12 +511,40 @@ export function GitHubSettingsPage(props: PluginPageProps) {
       .then((data) => {
         setOauthStatus(data);
         setLoading(false);
+        setConnecting(false);
       })
-      .catch(() => setLoading(false));
-  });
+      .catch(() => {
+        setLoading(false);
+        setConnecting(false);
+      });
+  }, [companyId]);
+
+  // Check OAuth status on mount
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
 
   const handleConnect = () => {
-    window.location.href = `/api/github/oauth/authorize?companyId=${companyId}`;
+    setConnecting(true);
+    const url = `/api/github/oauth/authorize?companyId=${companyId}`;
+    const w = 600;
+    const h = 700;
+    const left = window.screenX + (window.outerWidth - w) / 2;
+    const top = window.screenY + (window.outerHeight - h) / 2;
+    const popup = window.open(url, "github-oauth", `width=${w},height=${h},left=${left},top=${top}`);
+
+    // Poll for popup close, then refresh status
+    if (popup) {
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          refreshStatus();
+        }
+      }, 500);
+    } else {
+      // Popup blocked — fall back to full-page redirect
+      window.location.href = url;
+    }
   };
 
   const handleDisconnect = async () => {
@@ -572,8 +600,8 @@ export function GitHubSettingsPage(props: PluginPageProps) {
                 Connect your GitHub account to enable repo cloning, issue sync, and agent tools.
               </p>
               {oauthStatus.oauthConfigured ? (
-                <button style={btnPrimaryStyle} onClick={handleConnect}>
-                  Connect with GitHub
+                <button style={btnPrimaryStyle} onClick={handleConnect} disabled={connecting}>
+                  {connecting ? "Connecting..." : "Connect with GitHub"}
                 </button>
               ) : (
                 <div style={{ fontSize: 12, color: "#f87171" }}>
