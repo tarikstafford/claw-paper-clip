@@ -171,14 +171,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   );
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
-  await ensureOpenCodeModelConfiguredAndAvailable({
-    model,
-    command,
-    cwd,
-    env: runtimeEnv,
-    onLog,
-  });
-
   const timeoutSec = asNumber(config.timeoutSec, DEFAULT_TIMEOUT_SEC);
   const graceSec = asNumber(config.graceSec, 20);
   const extraArgs = (() => {
