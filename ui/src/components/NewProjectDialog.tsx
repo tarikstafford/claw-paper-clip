@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
+import { pluginsApi } from "../api/plugins";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
@@ -26,6 +27,10 @@ import {
   FolderOpen,
   Github,
   GitBranch,
+  Lock,
+  Search,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { PROJECT_COLORS } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
@@ -41,8 +46,20 @@ const projectStatuses = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-type WorkspaceSetup = "none" | "local" | "repo" | "both";
+type WorkspaceSetup = "none" | "local" | "repo" | "both" | "github_picker";
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
+
+type GitHubAvailableRepo = {
+  slug: string;
+  cloneUrl: string;
+  htmlUrl: string;
+  defaultBranch: string;
+  private: boolean;
+  description: string | null;
+  language: string | null;
+  updatedAt: string;
+  connected: boolean;
+};
 
 export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
@@ -61,6 +78,7 @@ export function NewProjectDialog() {
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
+  const [repoSearch, setRepoSearch] = useState("");
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   const { data: goals } = useQuery({
@@ -68,6 +86,35 @@ export function NewProjectDialog() {
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && newProjectOpen,
   });
+
+  // Discover GitHub connector plugin ID
+  const { data: pluginContributions } = useQuery({
+    queryKey: ["plugins", "ui-contributions"],
+    queryFn: () => pluginsApi.listUiContributions(),
+    enabled: newProjectOpen,
+  });
+  const githubPluginId = useMemo(() => {
+    return pluginContributions?.find((p) => p.pluginKey === "paperclip-github-connector")?.pluginId ?? null;
+  }, [pluginContributions]);
+
+  // Fetch available repos from GitHub connector
+  const { data: githubReposData, isLoading: githubReposLoading } = useQuery({
+    queryKey: ["github-repos", githubPluginId, selectedCompanyId],
+    queryFn: async () => {
+      if (!githubPluginId || !selectedCompanyId) return null;
+      const result = await pluginsApi.bridgeGetData(githubPluginId, "available-repos", {}, selectedCompanyId);
+      return result.data as GitHubAvailableRepo[];
+    },
+    enabled: !!githubPluginId && !!selectedCompanyId && workspaceSetup === "github_picker",
+  });
+  const githubRepos = githubReposData ?? [];
+  const filteredRepos = useMemo(() => {
+    if (!repoSearch.trim()) return githubRepos;
+    const q = repoSearch.toLowerCase();
+    return githubRepos.filter(
+      (r) => r.slug.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q),
+    );
+  }, [githubRepos, repoSearch]);
 
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -92,6 +139,7 @@ export function NewProjectDialog() {
     setWorkspaceLocalPath("");
     setWorkspaceRepoUrl("");
     setWorkspaceError(null);
+    setRepoSearch("");
   }
 
   const isAbsolutePath = (value: string) => {
@@ -136,7 +184,7 @@ export function NewProjectDialog() {
   async function handleSubmit() {
     if (!selectedCompanyId || !name.trim()) return;
     const localRequired = workspaceSetup === "local" || workspaceSetup === "both";
-    const repoRequired = workspaceSetup === "repo" || workspaceSetup === "both";
+    const repoRequired = workspaceSetup === "repo" || workspaceSetup === "both" || workspaceSetup === "github_picker";
     const localPath = workspaceLocalPath.trim();
     const repoUrl = workspaceRepoUrl.trim();
 
@@ -145,7 +193,7 @@ export function NewProjectDialog() {
       return;
     }
     if (repoRequired && !isGitHubRepoUrl(repoUrl)) {
-      setWorkspaceError("Repo workspace must use a valid GitHub repo URL.");
+      setWorkspaceError(workspaceSetup === "github_picker" ? "Select a repository from the list." : "Repo workspace must use a valid GitHub repo URL.");
       return;
     }
 
@@ -289,7 +337,23 @@ export function NewProjectDialog() {
             <p className="text-sm font-medium">Where will work be done on this project?</p>
             <p className="text-xs text-muted-foreground">Add local folder and/or GitHub repo workspace hints.</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className={cn("grid gap-2", githubPluginId ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3")}>
+            {githubPluginId && (
+              <button
+                type="button"
+                className={cn(
+                  "rounded-lg border px-3 py-3 text-left transition-colors",
+                  workspaceSetup === "github_picker" ? "border-foreground bg-accent/40" : "border-border hover:bg-accent/30",
+                )}
+                onClick={() => toggleWorkspaceSetup("github_picker")}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Github className="h-4 w-4" />
+                  From GitHub
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Pick a connected repo.</p>
+              </button>
+            )}
             <button
               type="button"
               className={cn(
@@ -314,7 +378,7 @@ export function NewProjectDialog() {
             >
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Github className="h-4 w-4" />
-                A github repo
+                Paste URL
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Paste a GitHub URL.</p>
             </button>
@@ -333,6 +397,64 @@ export function NewProjectDialog() {
               <p className="mt-1 text-xs text-muted-foreground">Configure local + repo hints.</p>
             </button>
           </div>
+
+          {workspaceSetup === "github_picker" && (
+            <div className="rounded-md border border-border p-2 space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <input
+                  className="w-full rounded border border-border bg-transparent pl-7 pr-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50"
+                  value={repoSearch}
+                  onChange={(e) => setRepoSearch(e.target.value)}
+                  placeholder="Search repositories..."
+                  autoFocus
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-0.5">
+                {githubReposLoading && (
+                  <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Loading repos...
+                  </div>
+                )}
+                {!githubReposLoading && filteredRepos.length === 0 && (
+                  <div className="px-2 py-3 text-xs text-muted-foreground">
+                    {githubRepos.length === 0 ? "No repos found. Connect GitHub first." : "No matches."}
+                  </div>
+                )}
+                {filteredRepos.map((repo) => {
+                  const selected = workspaceRepoUrl === repo.htmlUrl;
+                  return (
+                    <button
+                      key={repo.slug}
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-2 w-full rounded px-2 py-1.5 text-left text-xs transition-colors",
+                        selected ? "bg-accent" : "hover:bg-accent/50",
+                      )}
+                      onClick={() => {
+                        setWorkspaceRepoUrl(repo.htmlUrl);
+                        if (!name.trim()) setName(repo.slug.split("/").pop() ?? "");
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {repo.private && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+                          <span className="font-medium truncate">{repo.slug}</span>
+                          {selected && <Check className="h-3 w-3 text-green-500 shrink-0 ml-auto" />}
+                        </div>
+                        {repo.description && (
+                          <p className="text-muted-foreground truncate mt-0.5">{repo.description}</p>
+                        )}
+                      </div>
+                      {repo.language && (
+                        <span className="text-muted-foreground/60 shrink-0">{repo.language}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {(workspaceSetup === "local" || workspaceSetup === "both") && (
             <div className="rounded-md border border-border p-2">
