@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { agents, projects, projectWorkspaces } from "@paperclipai/db";
 import type { CreateThread, SendMessage } from "@paperclipai/shared";
 import { createThreadSchema, sendMessageSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
@@ -116,6 +118,44 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
       // Build compacted thread context for agent (COMP-05)
       const compacted = await compactionSvc.buildThreadPrompt(threadId, "claude-sonnet-4-5");
 
+      // Build lightweight company context so the agent knows about the ecosystem
+      let companyContext = "";
+      try {
+        const companyId = thread.companyId;
+        const [agentRows, projectRows] = await Promise.all([
+          db.select({ id: agents.id, name: agents.name, status: agents.status, adapterType: agents.adapterType })
+            .from(agents)
+            .where(eq(agents.companyId, companyId)),
+          db.select({
+            id: projects.id,
+            name: projects.name,
+            status: projects.status,
+            repoUrl: projectWorkspaces.repoUrl,
+            cwd: projectWorkspaces.cwd,
+          })
+            .from(projects)
+            .leftJoin(projectWorkspaces, and(eq(projects.id, projectWorkspaces.projectId), eq(projectWorkspaces.companyId, companyId)))
+            .where(eq(projects.companyId, companyId)),
+        ]);
+        const agentList = agentRows.map((a) => `- ${a.name} (${a.status}, ${a.adapterType})`).join("\n");
+        const projectList = projectRows.map((p) => {
+          const repo = p.repoUrl ? ` — repo: ${p.repoUrl}` : "";
+          const cwd = p.cwd && p.cwd !== "/__paperclip_repo_only__" ? ` — cwd: ${p.cwd}` : "";
+          return `- ${p.name} (${p.status})${repo}${cwd}`;
+        }).join("\n");
+        companyContext = [
+          "## Your company context",
+          "",
+          "### Agents",
+          agentList || "No agents configured.",
+          "",
+          "### Projects",
+          projectList || "No projects configured.",
+        ].join("\n");
+      } catch {
+        // Non-critical — agent can still respond without context
+      }
+
       void heartbeat.wakeup(thread.agentId, {
         source: "on_demand",
         triggerDetail: "system",
@@ -128,6 +168,7 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
           messageId: message.id,
           source: "chat.message",
           paperclipChatThreadContext: compacted.prompt,
+          paperclipCompanyContext: companyContext,
         },
       });
     }

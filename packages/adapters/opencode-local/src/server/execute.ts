@@ -256,8 +256,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const chatThreadContext = asString(context.paperclipChatThreadContext, "").trim();
+  const companyContext = asString(context.paperclipCompanyContext, "").trim();
   const chatModePreamble = context.wakeReason === "chat_message" && chatThreadContext
-    ? `This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Only use the Paperclip API if the user explicitly asks about tasks, status, assignments, or work. Do NOT run the full heartbeat procedure (no identity check, no inbox scan, no dashboard review) unless the user asks for it.
+    ? `This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Do NOT run the full heartbeat procedure (no identity check, no inbox scan, no dashboard review) unless the user asks for it.
+
+You have full access to the Paperclip API via $PAPERCLIP_API_URL and $PAPERCLIP_API_KEY. Use it freely to look up projects, issues, agents, comments, or any other information the user asks about.
 
 Your final text output will be automatically posted back to the chat thread — do NOT post it yourself via curl or API. Just produce your response as your final output.`
     : "";
@@ -266,6 +269,7 @@ Your final text output will be automatically posted back to the chat thread — 
     instructionsPrefix,
     renderedBootstrapPrompt,
     chatModePreamble,
+    companyContext,
     sessionHandoffNote,
     chatThreadContext,    // COMP-05: injects compacted chat thread into agent prompt
     renderedPrompt,
@@ -276,6 +280,7 @@ Your final text output will be automatically posted back to the chat thread — 
     instructionsChars: instructionsPrefix.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
     chatModePreambleChars: chatModePreamble.length,
+    companyContextChars: companyContext.length,
     sessionHandoffChars: sessionHandoffNote.length,
     chatThreadContextChars: chatThreadContext.length,
     heartbeatPromptChars: renderedPrompt.length,
