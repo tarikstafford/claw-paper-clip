@@ -24,7 +24,11 @@ mkdir -p /paperclip/instances/default/workspaces \
          /paperclip/.local/share/opencode
 
 # Copy OpenCode provider config into the volume (overwrite each deploy so it stays current).
+# OpenCode reads config from $XDG_CONFIG_HOME/opencode/opencode.json (global)
+# and also from the cwd (per-project). We set both to be safe.
 cp /app/opencode.json /paperclip/.config/opencode/opencode.json
+echo "[paperclip] Copied opencode.json to /paperclip/.config/opencode/opencode.json"
+ls -la /paperclip/.config/opencode/opencode.json
 
 # Write OpenCode auth.json from environment variables so providers can authenticate.
 # OpenCode reads credentials from ~/.local/share/opencode/auth.json, not env vars.
