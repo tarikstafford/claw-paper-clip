@@ -157,27 +157,36 @@ export async function ensureOpenCodeModelConfiguredAndAvailable(input: {
   command?: unknown;
   cwd?: unknown;
   env?: unknown;
+  onLog?: (stream: "stdout" | "stderr", message: string) => Promise<void>;
 }): Promise<AdapterModel[]> {
   const model = asString(input.model, "").trim();
   if (!model) {
     throw new Error("OpenCode requires `adapterConfig.model` in provider/model format.");
   }
 
-  const models = await discoverOpenCodeModelsCached({
-    command: input.command,
-    cwd: input.cwd,
-    env: input.env,
-  });
+  let models: AdapterModel[];
+  try {
+    models = await discoverOpenCodeModelsCached({
+      command: input.command,
+      cwd: input.cwd,
+      env: input.env,
+    });
+  } catch (err) {
+    // Model discovery failed — log warning but proceed (the model may still work at runtime)
+    const msg = err instanceof Error ? err.message : String(err);
+    await input.onLog?.("stderr", `[paperclip] Warning: model discovery failed (${msg}), proceeding with configured model "${model}"\n`);
+    return [];
+  }
 
   if (models.length === 0) {
-    throw new Error("OpenCode returned no models. Run `opencode models` and verify provider auth.");
+    await input.onLog?.("stderr", `[paperclip] Warning: opencode models returned no results, proceeding with configured model "${model}"\n`);
+    return [];
   }
 
   if (!models.some((entry) => entry.id === model)) {
+    // Log warning but don't block — the model may work even if not listed in discovery
     const sample = models.slice(0, 12).map((entry) => entry.id).join(", ");
-    throw new Error(
-      `Configured OpenCode model is unavailable: ${model}. Available models: ${sample}${models.length > 12 ? ", ..." : ""}`,
-    );
+    await input.onLog?.("stderr", `[paperclip] Warning: model "${model}" not in discovery list (${sample}${models.length > 12 ? ", ..." : ""}), attempting run anyway\n`);
   }
 
   return models;

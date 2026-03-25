@@ -176,6 +176,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     command,
     cwd,
     env: runtimeEnv,
+    onLog,
   });
 
   const timeoutSec = asNumber(config.timeoutSec, DEFAULT_TIMEOUT_SEC);
