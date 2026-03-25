@@ -392,20 +392,41 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const chatThreadContext = asString(context.paperclipChatThreadContext, "").trim();
   const companyContext = asString(context.paperclipCompanyContext, "").trim();
   const chatModePreamble = context.wakeReason === "chat_message" && chatThreadContext
-    ? `This run was triggered by a chat message, not a scheduled heartbeat. Respond to the conversation naturally and concisely. Do NOT run the full heartbeat procedure (no identity check, no inbox scan, no dashboard review) unless the user asks for it.
+    ? `# Chat Mode — Respond to the user's message
 
-You have full access to the Paperclip API via $PAPERCLIP_API_URL and $PAPERCLIP_API_KEY. Use it freely to look up projects, issues, agents, comments, or any other information the user asks about.
+This run was triggered by a chat message. Respond naturally and concisely. Do NOT run the full heartbeat procedure unless the user asks for it.
 
-Your final text output will be automatically posted back to the chat thread — do NOT post it yourself via curl or API. Just produce your response as your final output.`
+## Your Paperclip API access
+
+You have FULL access to the Paperclip control plane API. Use curl to query it:
+
+- List agents: curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agents" -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+- List issues: curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues" -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+- Get issue comments: curl -sS "$PAPERCLIP_API_URL/api/issues/<ISSUE_ID>/comments" -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+- List projects: curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/projects" -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+
+Use these APIs proactively to answer questions about projects, agents, tasks, and team status. You ARE the control plane — you can see everything.
+
+Your final text output will be automatically posted back to the chat thread — do NOT post it yourself.`
     : "";
-  const prompt = joinPromptSections([
-    renderedBootstrapPrompt,
-    chatModePreamble,
-    companyContext,
-    sessionHandoffNote,
-    chatThreadContext,    // COMP-05: injects compacted chat thread into agent prompt
-    renderedPrompt,
-  ]);
+  // In chat mode, put conversation context first so the model focuses on the chat
+  const isChatMode = Boolean(chatModePreamble);
+  const prompt = isChatMode
+    ? joinPromptSections([
+        chatModePreamble,
+        companyContext,
+        chatThreadContext,
+        sessionHandoffNote,
+        renderedBootstrapPrompt,
+        renderedPrompt,
+      ])
+    : joinPromptSections([
+        renderedBootstrapPrompt,
+        companyContext,
+        sessionHandoffNote,
+        chatThreadContext,
+        renderedPrompt,
+      ]);
   const promptMetrics = {
     promptChars: prompt.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
