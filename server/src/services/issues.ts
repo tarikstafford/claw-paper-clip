@@ -928,6 +928,43 @@ export function issueService(db: Db) {
         }
       }
 
+      // Adopt stale executionRunId when checkoutRunId is null
+      if (
+        checkoutRunId &&
+        current.assigneeAgentId === agentId &&
+        current.executionRunId &&
+        current.executionRunId !== checkoutRunId &&
+        !current.checkoutRunId
+      ) {
+        const stale = await isTerminalOrMissingHeartbeatRun(current.executionRunId);
+        if (stale) {
+          const adopted = await db
+            .update(issues)
+            .set({
+              checkoutRunId,
+              executionRunId: checkoutRunId,
+              executionLockedAt: new Date(),
+              status: "in_progress",
+              startedAt: now,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(issues.id, id),
+                eq(issues.assigneeAgentId, agentId),
+                eq(issues.executionRunId, current.executionRunId),
+                isNull(issues.checkoutRunId),
+              ),
+            )
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (adopted) {
+            const [enriched] = await withIssueLabels(db, [adopted]);
+            return enriched;
+          }
+        }
+      }
+
       // If this run already owns it and it's in_progress, return it (no self-409)
       if (
         current.assigneeAgentId === agentId &&
