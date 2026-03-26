@@ -8,6 +8,7 @@ import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
 import { dbBackupCommand } from "./commands/db-backup.js";
+import { setupPlatformEngineer } from "./commands/setup-platform-engineer.js";
 import { registerContextCommands } from "./commands/client/context.js";
 import { registerCompanyCommands } from "./commands/client/company.js";
 import { registerIssueCommands } from "./commands/client/issue.js";
@@ -138,6 +139,25 @@ registerActivityCommands(program);
 registerDashboardCommands(program);
 registerWorktreeCommands(program);
 registerPluginCommands(program);
+
+const setup = program.command("setup").description("Setup utilities for agents and projects");
+
+setup
+  .command("platform-engineer")
+  .description("Create the Platform Engineer agent with a project workspace on the Paperclip repo")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--context <path>", "Path to CLI context file")
+  .option("--profile <name>", "CLI context profile name")
+  .option("--api-base <url>", "Base URL for the Paperclip API")
+  .option("--api-key <token>", "Bearer token")
+  .option("-C, --company-id <id>", "Company ID")
+  .option("--repo-url <url>", "Git repo URL for claw-paper-clip", "https://github.com/tarikstafford/claw-paper-clip.git")
+  .option("--adapter-type <type>", "Adapter type (opencode_local, claude_local)", "opencode_local")
+  .option("--model <model>", "LLM model to use")
+  .option("--budget <cents>", "Monthly budget in cents", "10000")
+  .option("--ceo-id <id>", "CEO agent ID to set as manager")
+  .action(setupPlatformEngineer);
 
 const auth = program.command("auth").description("Authentication and bootstrap utilities");
 
