@@ -83,6 +83,10 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
     const actor = getActorInfo(req);
     const { body, telegramUpdateId, senderType: requestedSenderType } = req.body as SendMessage;
     const senderType = requestedSenderType ?? (actor.actorType === "agent" ? "agent" : "user");
+    // Messages that will wake the target agent should be "enqueued" until processed.
+    // Agent messages to its own thread (self-talk) remain "processed".
+    const isCrossAgentMessage = senderType === "agent" && actor.actorType === "agent" && actor.actorId !== thread.agentId;
+    const processingStatus = senderType === "user" || isCrossAgentMessage ? "enqueued" : "processed";
 
     let message;
     try {
@@ -92,7 +96,7 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
         senderAgentId: actor.actorType === "agent" ? actor.actorId : null,
         senderUserId: actor.actorType === "user" ? actor.actorId : null,
         body,
-        processingStatus: senderType === "user" ? "enqueued" : "processed",
+        processingStatus,
         telegramUpdateId: telegramUpdateId ?? null,
       });
     } catch (err) {
@@ -114,7 +118,9 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
       payload: { threadId, messageId: message.id, agentId: thread.agentId },
     });
 
-    if (senderType === "user") {
+    // Wake the target agent for user messages, or agent messages from a *different* agent
+    const isAgentToAgent = senderType === "agent" && actor.actorType === "agent" && actor.actorId !== thread.agentId;
+    if (senderType === "user" || isAgentToAgent) {
       // Build compacted thread context for agent (COMP-05)
       const compacted = await compactionSvc.buildThreadPrompt(threadId, "claude-sonnet-4-5");
 
