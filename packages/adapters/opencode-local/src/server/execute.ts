@@ -114,6 +114,31 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+
+  // If agentHome is outside the cwd, symlink it inside so OpenCode's sandbox
+  // allows file access (it restricts reads/writes to the cwd tree).
+  let effectiveAgentHome = agentHome;
+  if (agentHome && !agentHome.startsWith(cwd + "/") && agentHome !== cwd) {
+    const linkPath = path.join(cwd, ".agent-home");
+    try {
+      const existing = await fs.readlink(linkPath).catch(() => null);
+      if (existing !== agentHome) {
+        await fs.rm(linkPath, { force: true });
+        await fs.symlink(agentHome, linkPath);
+      }
+      effectiveAgentHome = linkPath;
+      await onLog(
+        "stderr",
+        `[paperclip] Symlinked agent home into cwd: ${linkPath} -> ${agentHome}\n`,
+      );
+    } catch (err) {
+      await onLog(
+        "stderr",
+        `[paperclip] Warning: could not symlink agent home into cwd: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+
   const skillsContent = await collectSkillsContent(onLog);
 
   const envConfig = parseObject(config.env);
@@ -155,7 +180,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
   if (workspaceRepoUrl) env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
   if (workspaceRepoRef) env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
-  if (agentHome) env.AGENT_HOME = agentHome;
+  if (effectiveAgentHome) env.AGENT_HOME = effectiveAgentHome;
   if (workspaceHints.length > 0) env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
 
   for (const [key, value] of Object.entries(envConfig)) {
