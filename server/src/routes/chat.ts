@@ -10,6 +10,7 @@ import { unauthorized, notFound } from "../errors.js";
 import { publishLiveEvent } from "../services/live-events.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { chatService } from "../services/chat.js";
+import { logActivity } from "../services/activity-log.js";
 import type { compactionService } from "../services/compaction.js";
 
 export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionService>) {
@@ -115,11 +116,35 @@ export function chatRoutes(db: Db, compactionSvc: ReturnType<typeof compactionSe
     publishLiveEvent({
       companyId: thread.companyId,
       type: "chat.message.created",
-      payload: { threadId, messageId: message.id, agentId: thread.agentId },
+      payload: {
+        threadId,
+        messageId: message.id,
+        agentId: thread.agentId,
+        senderType,
+        senderAgentId: actor.actorType === "agent" ? actor.actorId : undefined,
+      },
     });
 
     // Wake the target agent for user messages, or agent messages from a *different* agent
     const isAgentToAgent = senderType === "agent" && actor.actorType === "agent" && actor.actorId !== thread.agentId;
+
+    if (isAgentToAgent) {
+      void logActivity(db, {
+        companyId: thread.companyId,
+        actorType: "agent",
+        actorId: actor.actorId,
+        agentId: actor.actorId,
+        runId: actor.runId,
+        action: "chat.agent_message",
+        entityType: "chat_thread",
+        entityId: threadId,
+        details: {
+          targetAgentId: thread.agentId,
+          messageId: message.id,
+          bodyPreview: body.length > 200 ? body.slice(0, 200) + "..." : body,
+        },
+      });
+    }
     if (senderType === "user" || isAgentToAgent) {
       // Build compacted thread context for agent (COMP-05)
       const compacted = await compactionSvc.buildThreadPrompt(threadId, "claude-sonnet-4-5");

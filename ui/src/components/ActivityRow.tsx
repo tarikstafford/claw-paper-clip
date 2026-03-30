@@ -42,6 +42,7 @@ const ACTION_VERBS: Record<string, string> = {
   "company.updated": "updated company",
   "company.archived": "archived",
   "company.budget_updated": "updated budget for",
+  "chat.agent_message": "messaged",
 };
 
 function humanizeValue(value: unknown): string {
@@ -50,6 +51,9 @@ function humanizeValue(value: unknown): string {
 }
 
 function formatVerb(action: string, details?: Record<string, unknown> | null): string {
+  if (action === "chat.agent_message" && details) {
+    return "messaged";
+  }
   if (action === "issue.updated" && details) {
     const previous = (details._previous ?? {}) as Record<string, unknown>;
     if (details.status !== undefined) {
@@ -75,6 +79,7 @@ function entityLink(entityType: string, entityId: string, name?: string | null):
     case "project": return `/projects/${deriveProjectUrlKey(name, entityId)}`;
     case "goal": return `/goals/${entityId}`;
     case "approval": return `/approvals/${entityId}`;
+    case "chat_thread": return `/chat?thread=${entityId}`;
     default: return null;
   }
 }
@@ -95,11 +100,20 @@ export function ActivityRow({ event, agentMap, entityNameMap, entityTitleMap, cl
     ? (event.details as Record<string, unknown> | null)?.agentId as string | undefined
     : undefined;
 
-  const name = isHeartbeatEvent
-    ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
-    : entityNameMap.get(`${event.entityType}:${event.entityId}`);
+  const isChatAgentMessage = event.action === "chat.agent_message";
+  const chatTargetAgentId = isChatAgentMessage
+    ? (event.details as Record<string, unknown> | null)?.targetAgentId as string | undefined
+    : undefined;
 
-  const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`);
+  const name = isChatAgentMessage
+    ? (chatTargetAgentId ? (agentMap.get(chatTargetAgentId)?.name ?? chatTargetAgentId) : null)
+    : isHeartbeatEvent
+      ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
+      : entityNameMap.get(`${event.entityType}:${event.entityId}`);
+
+  const entityTitle = isChatAgentMessage
+    ? ((event.details as Record<string, unknown> | null)?.bodyPreview as string | undefined) ?? null
+    : entityTitleMap?.get(`${event.entityType}:${event.entityId}`) ?? null;
 
   const link = isHeartbeatEvent && heartbeatAgentId
     ? `/agents/${heartbeatAgentId}/runs/${event.entityId}`
